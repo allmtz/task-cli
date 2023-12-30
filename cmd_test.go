@@ -274,8 +274,8 @@ func TestParseTags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		testname := fmt.Sprintf("%v", tt.input)
-		t.Run(testname, func(t *testing.T) {
+		testName := fmt.Sprintf("%v", tt.input)
+		t.Run(testName, func(t *testing.T) {
 			parsedTags, parsedStr := parseTags(tt.input)
 			var tag string
 			if len(parsedTags) >= 1 {

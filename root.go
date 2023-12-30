@@ -20,17 +20,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "task [command]",
 	Short: "A CLI for managing your TODOs",
-	// Long: `Available Commands:
-	//   add         Add a new task to your TODO list
-	//   do          Mark a task on your TODO list as complete
-	//   list        List all of your incomplete tasks
-	//   finish      Delete all completed tasks
-	//   clear       Delete all tasks
-	//   archive     View all previously completed tasks`,
-
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	// Long: ``
 }
 
 // Subcommands
@@ -299,7 +289,7 @@ func init() {
 	// add sub commands
 	rootCmd.AddCommand(addCommand, doCommand, listCommand, finishCommand, clearCommand, archiveCommand, deleteCommand, countCommand, tagsCommand)
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gophercises.yaml)")
+	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.task-cli.yaml)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
@@ -343,7 +333,7 @@ func Connect() *bolt.DB {
 	// default is "/task"
 	path := hDir + "/task"
 
-	// creates the `task` dir if it dosen't exist
+	// creates the `task` dir if it doesn't exist
 	dErr := os.MkdirAll(path, 0777)
 	check(dErr)
 
@@ -448,7 +438,7 @@ func filterTasks(tp []TaskPosition, include []string) []TaskPosition {
 	return filtered
 }
 
-// Format the tasks in db, return the formated string
+// Format the tasks in db, return the formatted string
 func formatTasks(tp []TaskPosition) string {
 	var formatted []string
 	for _, t := range tp {
@@ -480,7 +470,7 @@ func getCount(db *bolt.DB, bucket []byte) int {
 	return count
 }
 
-// Opens an Update transacton with `db` and deletes the entry from `bucket`
+// Opens an Update transaction with `db` and deletes the entry from `bucket`
 // whose key matches `key`. Returns an error if the bucket does not exist, failed to delete an entry
 // or failed to renumber the remaining entries
 func deleteKey(k int, db *bolt.DB, bucket []byte) error {
@@ -498,7 +488,7 @@ func deleteKey(k int, db *bolt.DB, bucket []byte) error {
 }
 
 // Remove the specified keys by filtering the bucket, deleting the bucket and
-// insertring the filtered items into a new bucket with the same name.
+// inserting the filtered items into a new bucket with the same name.
 // O(n), filter n items, insert n items
 func deleteKeys(toDelete []int, db *bolt.DB, bucket []byte) {
 	db.Update(func(tx *bolt.Tx) error {
@@ -528,6 +518,7 @@ func deleteKeys(toDelete []int, db *bolt.DB, bucket []byte) {
 	})
 }
 
+// Update the specified tasks status to `completed`
 func completeTask(taskID int, db *bolt.DB) {
 	db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(TASKS_BUCKET)
@@ -564,6 +555,8 @@ func completeTask(taskID int, db *bolt.DB) {
 
 }
 
+// Renumber bucket entries in ascending order.
+// Especially useful after deleting an entry in the middle of the bucket
 func renumberEntires(bucket *bolt.Bucket) error {
 	// can ignore errors if this is called in an Update() call:
 	// Delete() can't fail in an Update() call,
@@ -580,14 +573,19 @@ func renumberEntires(bucket *bolt.Bucket) error {
 	return er
 }
 
+// Convert an int to a byte slice
 func itob(v int) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(v))
 	return b
 }
+
+// Convert a byte slice to an int
 func btoi(b []byte) int {
 	return int(binary.BigEndian.Uint64(b))
 }
+
+// Unmarshal a byte slice to a Task struct
 func bToTask(b []byte) Task {
 	var task Task
 	err := json.Unmarshal(b, &task)
