@@ -1,4 +1,4 @@
-module allmtz/task-cli
+module allmtz/task
 
 go 1.21.4
 
