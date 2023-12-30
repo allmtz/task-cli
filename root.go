@@ -24,7 +24,7 @@ var rootCmd = &cobra.Command{
 }
 
 // Subcommands
-var addCommand = &cobra.Command{
+var addCmd = &cobra.Command{
 	Use:   "add [task]",
 	Short: "Add a new task to your TODO list",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -50,7 +50,7 @@ var addCommand = &cobra.Command{
 	},
 }
 
-var doCommand = &cobra.Command{
+var doCmd = &cobra.Command{
 	Use:   "do [taskID]",
 	Short: "Mark a task on your TODO list as complete",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -72,7 +72,7 @@ var doCommand = &cobra.Command{
 	},
 }
 
-var updateCommand = &cobra.Command{
+var updateCmd = &cobra.Command{
 	Use:   "update [taskID] [-ds]",
 	Short: "Update a task",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -188,7 +188,7 @@ func updateTask(db *bolt.DB, taskId int, updated Task) error {
 	})
 }
 
-var listCommand = &cobra.Command{
+var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all of your incomplete tasks",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -205,7 +205,7 @@ var listCommand = &cobra.Command{
 	},
 }
 
-var finishCommand = &cobra.Command{
+var finishCmd = &cobra.Command{
 	Use:   "finish",
 	Short: "Delete all completed tasks",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -256,7 +256,7 @@ func finish(db *bolt.DB) error {
 	})
 }
 
-var clearCommand = &cobra.Command{
+var clearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Delete all tasks",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -271,7 +271,7 @@ var clearCommand = &cobra.Command{
 	},
 }
 
-var deleteCommand = &cobra.Command{
+var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete a task",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -314,7 +314,7 @@ var deleteCommand = &cobra.Command{
 	},
 }
 
-var archiveCommand = &cobra.Command{
+var archiveCmd = &cobra.Command{
 	Use:   "archive",
 	Short: "View all previously completed tasks",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -351,7 +351,7 @@ var archiveCommand = &cobra.Command{
 	},
 }
 
-var countCommand = &cobra.Command{
+var countCmd = &cobra.Command{
 	Use:   "count",
 	Short: "Print the number of existing tasks",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -362,7 +362,7 @@ var countCommand = &cobra.Command{
 	},
 }
 
-var tagsCommand = &cobra.Command{
+var tagsCmd = &cobra.Command{
 	Use:   "tags",
 	Short: "Print existing tags",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -406,21 +406,21 @@ func init() {
 
 	// add sub commands
 	rootCmd.AddCommand(
-		addCommand, doCommand,
-		updateCommand, listCommand,
-		finishCommand, clearCommand,
-		archiveCommand, deleteCommand,
-		countCommand, tagsCommand,
+		addCmd, doCmd,
+		updateCmd, listCmd,
+		finishCmd, clearCmd,
+		archiveCmd, deleteCmd,
+		countCmd, tagsCmd,
 	)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.task-cli.yaml)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	archiveCommand.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
-	listCommand.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
-	updateCommand.Flags().StringVarP(&UpdatedDesc, "des", "d", "", "New task description. If a tag is present in the new description, the old tag will be replaced")
-	updateCommand.Flags().BoolVarP(&UpdateStatus, "status", "s", false, "Flip the completion status of the task")
+	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
+	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
+	updateCmd.Flags().StringVarP(&UpdatedDesc, "des", "d", "", "New task description. If a tag is present in the new description, the old tag will be replaced")
+	updateCmd.Flags().BoolVarP(&UpdateStatus, "status", "s", false, "Flip the completion status of the task")
 }
 
 var TASKS_BUCKET = []byte("tasks")
