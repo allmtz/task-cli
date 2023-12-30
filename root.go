@@ -72,6 +72,122 @@ var doCommand = &cobra.Command{
 	},
 }
 
+var updateCommand = &cobra.Command{
+	Use:   "update [taskID] [-ds]",
+	Short: "Update a task",
+	Run: func(cmd *cobra.Command, args []string) {
+		db := Connect()
+		defer db.Close()
+
+		// Make sure exactly 1 argument is passed in
+		if len(args) == 0 {
+			fmt.Printf("Must specify a task to update\n")
+			return
+		}
+		if len(args) > 1 {
+			fmt.Printf("Can only update one task at a time\n")
+			return
+		}
+
+		// Make sure the argument is a number
+		id, err := strconv.Atoi(args[0])
+		if err != nil {
+			fmt.Printf("Arguments should only be numbers\n")
+			fmt.Printf("%s is not a number\n", args[0])
+			return
+		}
+
+		// Make sure the input number is a valid taskID
+		taskCount := getCount(db, TASKS_BUCKET)
+		if id > taskCount {
+			fmt.Printf("%d is out of range, %d tasks exist\n", id, taskCount)
+			return
+		}
+
+		// Return early if there's no update to make
+		if UpdatedDesc == "" && !UpdateStatus {
+			fmt.Printf("Did not make any updates, try using a flag\n")
+			return
+		}
+
+		t, _ := getTask(db, id)
+
+		// Flip the task status
+		if UpdateStatus {
+			if t.Status == STATUS.COMPLETE {
+				t.Status = STATUS.INCOMPLETE
+			} else {
+				t.Status = STATUS.COMPLETE
+			}
+		}
+
+		// Update the task description
+		if UpdatedDesc != "" {
+			// Update the tag if a tag is present in the input
+			tags, s := parseTags(UpdatedDesc)
+			if s == "" {
+				fmt.Printf("Must provide a task description\n")
+				return
+			}
+			if len(tags) >= 1 {
+				t.Tag = tags[0]
+			}
+			t.Desc = s
+		}
+
+		// Finally, update the task in the db
+		if err := updateTask(db, id, t); err != nil {
+			fmt.Printf("Ran into an error: %v", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Updated task %d\n", id)
+		fmt.Println()
+
+		// Print the updated tasks
+		tp := getTasks(db)
+		fmt.Println(formatTasks(tp))
+	},
+}
+
+// Retrieve a task by key. Returns an error if the task bucket does not exist or if the key does not exist.
+func getTask(db *bolt.DB, key int) (Task, error) {
+	var t Task
+	err := db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		if b == nil {
+			return errors.New("Task bucket does not exist")
+		}
+
+		buf := b.Get(itob(key))
+		if buf == nil {
+			return errors.New("Key does not exist")
+		}
+
+		t = bToTask(buf)
+		return nil
+	})
+	return t, err
+}
+
+// Update a task in the db. Returns an error if the tasks bucket does not exist,
+// if failed to marshal the task, or if failed to update the task in the db.
+func updateTask(db *bolt.DB, taskId int, updated Task) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		if b == nil {
+			return errors.New("Tasks bucket does not exist")
+		}
+
+		t, jsonErr := json.Marshal(updated)
+		if jsonErr != nil {
+			return errors.New("Failed to marshal updated task")
+		}
+
+		return b.Put(itob(taskId), t)
+	})
+}
+
 var listCommand = &cobra.Command{
 	Use:   "list",
 	Short: "List all of your incomplete tasks",
@@ -271,6 +387,8 @@ var tagsCommand = &cobra.Command{
 // Flags
 var ClearArchive bool
 var ShowTags bool
+var UpdatedDesc string
+var UpdateStatus bool
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -287,8 +405,13 @@ func init() {
 	// will be global for your application.
 
 	// add sub commands
-	rootCmd.AddCommand(addCommand, doCommand, listCommand, finishCommand, clearCommand, archiveCommand, deleteCommand, countCommand, tagsCommand)
-
+	rootCmd.AddCommand(
+		addCommand, doCommand,
+		updateCommand, listCommand,
+		finishCommand, clearCommand,
+		archiveCommand, deleteCommand,
+		countCommand, tagsCommand,
+	)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.task-cli.yaml)")
 
 	// Cobra also supports local flags, which will only run
@@ -296,6 +419,8 @@ func init() {
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	archiveCommand.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
 	listCommand.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
+	updateCommand.Flags().StringVarP(&UpdatedDesc, "des", "d", "", "New task description. If a tag is present in the new description, the old tag will be replaced")
+	updateCommand.Flags().BoolVarP(&UpdateStatus, "status", "s", false, "Flip the completion status of the task")
 }
 
 var TASKS_BUCKET = []byte("tasks")
