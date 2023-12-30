@@ -150,44 +150,6 @@ var updateCmd = &cobra.Command{
 	},
 }
 
-// Retrieve a task by key. Returns an error if the task bucket does not exist or if the key does not exist.
-func getTask(db *bolt.DB, key int) (Task, error) {
-	var t Task
-	err := db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(TASKS_BUCKET)
-		if b == nil {
-			return errors.New("Task bucket does not exist")
-		}
-
-		buf := b.Get(itob(key))
-		if buf == nil {
-			return errors.New("Key does not exist")
-		}
-
-		t = bToTask(buf)
-		return nil
-	})
-	return t, err
-}
-
-// Update a task in the db. Returns an error if the tasks bucket does not exist,
-// if failed to marshal the task, or if failed to update the task in the db.
-func updateTask(db *bolt.DB, taskId int, updated Task) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(TASKS_BUCKET)
-		if b == nil {
-			return errors.New("Tasks bucket does not exist")
-		}
-
-		t, jsonErr := json.Marshal(updated)
-		if jsonErr != nil {
-			return errors.New("Failed to marshal updated task")
-		}
-
-		return b.Put(itob(taskId), t)
-	})
-}
-
 var listCmd = &cobra.Command{
 	Use:   "list -[t]",
 	Short: "List all of your incomplete tasks",
@@ -219,41 +181,6 @@ var finishCmd = &cobra.Command{
 		tp := getTasks(db)
 		fmt.Println(formatTasks(tp))
 	},
-}
-
-// Filter out completed tasks from the `tasks` bucket
-func finish(db *bolt.DB) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(TASKS_BUCKET)
-		archive, _ := tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
-		if b == nil {
-			return errors.New("No tasks exist")
-		}
-
-		var filtered [][]byte
-		err := b.ForEach(func(k, v []byte) error {
-			t := bToTask(v)
-
-			if t.Status != STATUS.COMPLETE {
-				filtered = append(filtered, v)
-				return nil
-			}
-			// add the completed tasks to the archive bucket
-			idx, _ := archive.NextSequence()
-			return archive.Put(itob(int(idx)), v)
-		})
-		if err != nil {
-			return err
-		}
-
-		tx.DeleteBucket(TASKS_BUCKET)
-		newBucket, _ := tx.CreateBucket(TASKS_BUCKET)
-		for _, v := range filtered {
-			k, _ := newBucket.NextSequence()
-			newBucket.Put(itob(int(k)), v)
-		}
-		return nil
-	})
 }
 
 var clearCmd = &cobra.Command{
@@ -542,6 +469,44 @@ func getTasks(db *bolt.DB) []TaskPosition {
 	return tasks
 }
 
+// Retrieve a task by key. Returns an error if the task bucket does not exist or if the key does not exist.
+func getTask(db *bolt.DB, key int) (Task, error) {
+	var t Task
+	err := db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		if b == nil {
+			return errors.New("Task bucket does not exist")
+		}
+
+		buf := b.Get(itob(key))
+		if buf == nil {
+			return errors.New("Key does not exist")
+		}
+
+		t = bToTask(buf)
+		return nil
+	})
+	return t, err
+}
+
+// Update a task in the db. Returns an error if the tasks bucket does not exist,
+// if failed to marshal the task, or if failed to update the task in the db.
+func updateTask(db *bolt.DB, taskId int, updated Task) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		if b == nil {
+			return errors.New("Tasks bucket does not exist")
+		}
+
+		t, jsonErr := json.Marshal(updated)
+		if jsonErr != nil {
+			return errors.New("Failed to marshal updated task")
+		}
+
+		return b.Put(itob(taskId), t)
+	})
+}
+
 // Filter tasks by tag. Returns a slice of tasks whose tag is present in `include`.
 func filterTasks(tp []TaskPosition, include []string) []TaskPosition {
 	// no tags to filter by, return tp
@@ -678,6 +643,41 @@ func completeTask(taskID int, db *bolt.DB) {
 		return nil
 	})
 
+}
+
+// Filter out completed tasks from the `tasks` bucket
+func finish(db *bolt.DB) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		archive, _ := tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
+		if b == nil {
+			return errors.New("No tasks exist")
+		}
+
+		var filtered [][]byte
+		err := b.ForEach(func(k, v []byte) error {
+			t := bToTask(v)
+
+			if t.Status != STATUS.COMPLETE {
+				filtered = append(filtered, v)
+				return nil
+			}
+			// add the completed tasks to the archive bucket
+			idx, _ := archive.NextSequence()
+			return archive.Put(itob(int(idx)), v)
+		})
+		if err != nil {
+			return err
+		}
+
+		tx.DeleteBucket(TASKS_BUCKET)
+		newBucket, _ := tx.CreateBucket(TASKS_BUCKET)
+		for _, v := range filtered {
+			k, _ := newBucket.NextSequence()
+			newBucket.Put(itob(int(k)), v)
+		}
+		return nil
+	})
 }
 
 // Renumber bucket entries in ascending order.
