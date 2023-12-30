@@ -189,7 +189,7 @@ func updateTask(db *bolt.DB, taskId int, updated Task) error {
 }
 
 var listCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list -[t]",
 	Short: "List all of your incomplete tasks",
 	Run: func(cmd *cobra.Command, args []string) {
 		db := Connect()
@@ -315,7 +315,7 @@ var deleteCmd = &cobra.Command{
 }
 
 var archiveCmd = &cobra.Command{
-	Use:   "archive",
+	Use:   "archive -[c]",
 	Short: "View all previously completed tasks",
 	Run: func(cmd *cobra.Command, args []string) {
 		db := Connect()
