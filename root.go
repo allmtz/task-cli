@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -72,82 +73,84 @@ var doCmd = &cobra.Command{
 	},
 }
 
-var updateCmd = &cobra.Command{
-	Use:   "update [taskID] [-ds]",
-	Short: "Update a task",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "update [taskID] [-ds]",
+		Short:         "Update a task",
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Setting this to true at the start of the RunE instead of the cmd itself
+			// ensures that flag parsing errors will still display the usage message
+			cmd.SilenceUsage = true
 
-		// Make sure exactly 1 argument is passed in
-		if len(args) == 0 {
-			fmt.Printf("Must specify a task to update\n")
-			return
-		}
-		if len(args) > 1 {
-			fmt.Printf("Can only update one task at a time\n")
-			return
-		}
-
-		// Make sure the argument is a number
-		id, err := strconv.Atoi(args[0])
-		if err != nil {
-			fmt.Printf("Arguments should only be numbers\n")
-			fmt.Printf("%s is not a number\n", args[0])
-			return
-		}
-
-		// Make sure the input number is a valid taskID
-		taskCount := getCount(db, TASKS_BUCKET)
-		if id > taskCount {
-			fmt.Printf("%d is out of range, %d tasks exist\n", id, taskCount)
-			return
-		}
-
-		// Return early if there's no update to make
-		if UpdatedDesc == "" && !UpdateStatus {
-			fmt.Printf("Did not make any updates, try using a flag\n")
-			return
-		}
-
-		t, _ := getTask(db, id)
-
-		// Flip the task status
-		if UpdateStatus {
-			if t.Status == STATUS.COMPLETE {
-				t.Status = STATUS.INCOMPLETE
-			} else {
-				t.Status = STATUS.COMPLETE
+			// Make sure exactly 1 argument is passed in
+			if len(args) != 1 {
+				fmt.Fprint(out, "Must specify a single task to update\n")
+				return errors.New("")
 			}
-		}
 
-		// Update the task description
-		if UpdatedDesc != "" {
-			// Update the tag if a tag is present in the input
-			tags, s := parseTags(UpdatedDesc)
-			if s == "" {
-				fmt.Printf("Must provide a task description\n")
-				return
+			// Make sure the argument is an int
+			id, err := strconv.Atoi(args[0])
+			if err != nil {
+				fmt.Fprintf(out, "Argument should an integer\n\"%s\" is not an integer\n", args[0])
+				return errors.New("")
 			}
-			if len(tags) >= 1 {
-				t.Tag = tags[0]
+
+			// Make sure the input number is a valid taskID
+			taskCount := getCount(db, TASKS_BUCKET)
+			if id > taskCount || id == 0 {
+				fmt.Fprintf(out, "Invalid task ID, %d tasks exist\n", taskCount)
+				return errors.New("")
 			}
-			t.Desc = s
-		}
 
-		// Finally, update the task in the db
-		if err := updateTask(db, id, t); err != nil {
-			fmt.Printf("Ran into an error: %v", err)
-			os.Exit(1)
-		}
+			// Return early if there's no update to make
+			if UpdatedDesc == "" && !UpdateStatus {
+				cmd.SilenceUsage = false
+				fmt.Fprintf(out, "Did not make any updates, try using a flag\n")
+				return errors.New("")
+			}
 
-		fmt.Printf("Updated task %d\n", id)
-		fmt.Println()
+			t, _ := getTask(db, id)
 
-		// Print the updated tasks
-		tp := getTasks(db)
-		fmt.Println(formatTasks(tp))
-	},
+			// Flip the task status
+			if UpdateStatus {
+				if t.Status == STATUS.COMPLETE {
+					t.Status = STATUS.INCOMPLETE
+				} else {
+					t.Status = STATUS.COMPLETE
+				}
+			}
+
+			// Update the task description
+			if UpdatedDesc != "" {
+				// Update the tag if a tag is present in the input
+				tags, s := parseTags(UpdatedDesc)
+				if s == "" {
+					fmt.Fprintf(out, "Must provide a task description\n")
+					return errors.New("")
+				}
+				if len(tags) >= 1 {
+					t.Tag = tags[0]
+				}
+				t.Desc = s
+			}
+
+			// Finally, update the task in the db
+			if err := updateTask(db, id, t); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(out, "Updated task %d\n", id)
+
+			// Print the updated tasks
+			tp := getTasks(db)
+			fmt.Fprintln(out, formatTasks(tp))
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&UpdatedDesc, "des", "d", "", "New task description. If a tag is present in the new description, the old tag will be replaced")
+	cmd.Flags().BoolVarP(&UpdateStatus, "status", "s", false, "Flip the completion status of the task")
+	return cmd
 }
 
 var listCmd = &cobra.Command{
@@ -331,6 +334,11 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
+	db := Connect()
+	defer db.Close()
+
+	updateCmd := newUpdateCmd(db, os.Stdout)
+
 	// add sub commands
 	rootCmd.AddCommand(
 		addCmd, doCmd,
@@ -346,8 +354,6 @@ func init() {
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
 	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
-	updateCmd.Flags().StringVarP(&UpdatedDesc, "des", "d", "", "New task description. If a tag is present in the new description, the old tag will be replaced")
-	updateCmd.Flags().BoolVarP(&UpdateStatus, "status", "s", false, "Flip the completion status of the task")
 }
 
 var TASKS_BUCKET = []byte("tasks")

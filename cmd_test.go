@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,104 @@ import (
 
 	"github.com/boltdb/bolt"
 )
+
+func TestUpdateCmd(t *testing.T) {
+	db, path := setup()
+	defer teardown(db, path)
+
+	// buf will hold any outputs to stdout from the update command, outputs to stderr, and the command "Usage" text,
+	// this eliminates the noise when running "$ go test"
+	buf := new(bytes.Buffer)
+	uCmd := newUpdateCmd(db, buf)
+	uCmd.SetOut(buf)
+	uCmd.SetErr(buf)
+
+	uCmd.SetArgs([]string{})
+	err := uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when no arguments are passed")
+	}
+
+	uCmd.SetArgs([]string{"1", "2"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when more than 1 argument is passed")
+	}
+
+	uCmd.SetArgs([]string{"a"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when argument is not an ASCII int")
+	}
+
+	uCmd.SetArgs([]string{"10"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when ID is out of range")
+	}
+
+	uCmd.SetArgs([]string{"0"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when ID is 0")
+	}
+
+	strs := []string{"a"}
+	for _, s := range strs {
+		err := insert(db, TASKS_BUCKET, s, "")
+		if err != nil {
+			t.Fatalf("Failed to insert into db: %v", err)
+		}
+	}
+
+	uCmd.SetArgs([]string{"1"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error when no update flags are used")
+	}
+
+	// Make sure the -d updates a tasks description and -s can flip from incomplete -> complete
+	updatedDesc := "updated"
+	dFlag := fmt.Sprintf("-d=%s", updatedDesc)
+
+	uCmd.SetArgs([]string{"1", dFlag, "-s"})
+	err = uCmd.Execute()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	task, err := getTask(db, 1)
+	if err != nil {
+		t.Fatalf("Error retrieving task: %v ", err)
+	}
+
+	if task.Desc != updatedDesc || task.Status != STATUS.COMPLETE {
+		t.Fatalf("Task did not update correctly. Expected: \"1. %s %s\". Got: \"1. %s %s\"", updatedDesc, STATUS.COMPLETE, task.Desc, task.Status)
+	}
+
+	// Make sure using tags with -d works && -s can flip from complete -> incomplete
+	uCmd.SetArgs([]string{"1", "-d=+test hmm", "-s"})
+	err = uCmd.Execute()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	t2, err := getTask(db, 1)
+	if err != nil {
+		t.Fatalf("Error retrieving task: %v", err)
+	}
+
+	if t2.Desc != "hmm" || t2.Status != STATUS.INCOMPLETE || t2.Tag != "test" {
+		t.Fatalf("Task did not update correctly\nGot:%v", t2)
+	}
+
+	// Make sure passing a tag with no text to -d causes an error
+	uCmd.SetArgs([]string{"1", "-d=+fail", "-s"})
+	err = uCmd.Execute()
+	if err == nil {
+		t.Fatalf("Should error if -d is only passed a flag")
+	}
+}
 
 func TestInsert(t *testing.T) {
 	db, path := setup()
