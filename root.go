@@ -68,7 +68,7 @@ var doCmd = &cobra.Command{
 			fmt.Printf("Completed task %d\n", id)
 		}
 		fmt.Println()
-		tp := getTasks(db)
+		tp := getTasks(db, TASKS_BUCKET)
 		fmt.Println(formatTasks(tp))
 	},
 }
@@ -145,7 +145,7 @@ func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 			fmt.Fprintf(out, "Updated task %d\n", id)
 
 			// Print the updated tasks
-			tp := getTasks(db)
+			tp := getTasks(db, TASKS_BUCKET)
 			fmt.Fprintln(out, formatTasks(tp))
 			return nil
 		},
@@ -181,7 +181,7 @@ var listCmd = &cobra.Command{
 			return
 		}
 
-		tasks := getTasks(db)
+		tasks := getTasks(db, TASKS_BUCKET)
 		tasks = filterTasks(tasks, include, exclude)
 		fmt.Println(formatTasks(tasks))
 	},
@@ -198,7 +198,7 @@ var finishCmd = &cobra.Command{
 		check(err)
 
 		fmt.Printf("Deleted all completed tasks\n")
-		tp := getTasks(db)
+		tp := getTasks(db, TASKS_BUCKET)
 		fmt.Println(formatTasks(tp))
 	},
 }
@@ -245,7 +245,7 @@ var deleteCmd = &cobra.Command{
 			er := deleteKey(ids[0], db, TASKS_BUCKET)
 			check(er)
 			fmt.Printf("Deleted task %d\n", ids[0])
-			tp := getTasks(db)
+			tp := getTasks(db, TASKS_BUCKET)
 			fmt.Println(formatTasks(tp))
 			return
 		}
@@ -256,7 +256,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		fmt.Println()
-		tp := getTasks(db)
+		tp := getTasks(db, TASKS_BUCKET)
 		fmt.Println(formatTasks(tp))
 	},
 }
@@ -295,6 +295,90 @@ var archiveCmd = &cobra.Command{
 			})
 			return nil
 		})
+	},
+}
+var statsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "See statistics on your task completion",
+	Run: func(cmd *cobra.Command, args []string) {
+		db := Connect()
+		defer db.Close()
+
+		// Define the expected date format
+		mmddyyyy := "01/02/2006"
+		var startDate time.Time
+		var endDate time.Time
+		var mustInputStart bool
+		var err error
+
+		// Attempt to parse using mm/dd/yyy format
+		endDate, err = time.Parse(mmddyyyy, EndTime)
+		if err == nil {
+			mustInputStart = true
+		} else {
+			// Defaults to now
+			endDate = time.Now()
+		}
+
+		// Attempt to parse using mm/dd/yyy format
+		startDate, err = time.Parse(mmddyyyy, StartTime)
+		if err != nil && mustInputStart {
+			// User input an end but no start
+			fmt.Println("Must specify a start date")
+			return
+		}
+		if err != nil {
+			// Defaults to last 24hrs
+			startDate, err = time.Parse(RFC3339, time.Now().Add(-24*time.Hour).Format(RFC3339))
+			if err != nil {
+				fmt.Println("Error parsing start date:", err)
+				return
+			}
+		}
+
+		if endDate.Before(startDate) {
+			fmt.Println("Error: End date occured prior to the Start date")
+			return
+		}
+
+		if OnDay != "" {
+			day, err := time.Parse(mmddyyyy, OnDay)
+			if err != nil {
+				fmt.Println("Error parsing date:", err)
+				return
+			}
+			startDate = day
+			endDate = day
+		}
+
+		// If the user inputs the same start and end date, then set the end date to the last tick (12:59) of that day.
+		if startDate.Equal(endDate) {
+			endDate = lastTick(endDate)
+		}
+
+		var filtered []TaskPosition
+		tasks := getTasks(db, ARCHIVE_BUCKET)
+		for _, t := range tasks {
+			completed, err := time.Parse(RFC3339, t.task.Completed)
+			if err != nil {
+				fmt.Println("Error parsing completed date:", err)
+				return
+			}
+
+			if completed.After(startDate) && completed.Before(endDate) {
+				filtered = append(filtered, t)
+				// Useful for debugging
+				// fmt.Println(completed)
+			}
+		}
+
+		if ShowCompleted {
+			fmt.Println(formatTasks(filtered))
+		}
+		sy, sm, sd := startDate.Date()
+		ey, em, ed := endDate.Date()
+
+		fmt.Printf("\nYou completed %d tasks from %d/%d/%d to %d/%d/%d\n", max(len(filtered), 0), sm, sd, sy, em, ed, ey)
 	},
 }
 
@@ -348,6 +432,12 @@ var ExcludeTags string
 var UpdatedDesc string
 var UpdateStatus bool
 
+// $ stats
+var StartTime string
+var EndTime string
+var OnDay string
+var ShowCompleted bool
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
@@ -374,6 +464,7 @@ func init() {
 		finishCmd, clearCmd,
 		archiveCmd, deleteCmd,
 		countCmd, tagsCmd,
+		statsCmd,
 	)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.task-cli.yaml)")
 
@@ -381,8 +472,17 @@ func init() {
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
+
 	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
 	listCmd.Flags().StringVarP(&ExcludeTags, "exclude", "e", "", "Exclude tasks with listed tags. The tags should be comma seperated. Example: -e=tag1,tag2,tag3")
+
+	statsCmd.Flags().StringVarP(&StartTime, "start", "s", "", "mm/dd/yyyy formated date to specify the start period")
+	statsCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
+	statsCmd.Flags().StringVarP(&OnDay, "on", "o", "", "mm/dd/yyyy formated date. Shorthand for setting the start and end date to the same day. Note that the on flag cannot be used with the start or end flags")
+	statsCmd.Flags().BoolVarP(&ShowCompleted, "verbose", "v", false, "Show the completed tasks")
+	statsCmd.MarkFlagsMutuallyExclusive("start", "on")
+	statsCmd.MarkFlagsMutuallyExclusive("end", "on")
+
 }
 
 var TASKS_BUCKET = []byte("tasks")
@@ -492,10 +592,10 @@ func insert(db *bolt.DB, bucket []byte, s string, tag string) error {
 }
 
 // Returns a slice containing all tasks in the database along with their respective positions.
-func getTasks(db *bolt.DB) []TaskPosition {
+func getTasks(db *bolt.DB, bucket []byte) []TaskPosition {
 	var tasks []TaskPosition
 	db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(TASKS_BUCKET)
+		b := tx.Bucket(bucket)
 		return b.ForEach(func(k, v []byte) error {
 			t := bToTask(v)
 			tasks = append(tasks, TaskPosition{
@@ -775,4 +875,11 @@ func bToTask(b []byte) Task {
 	err := json.Unmarshal(b, &task)
 	check(err)
 	return task
+}
+
+// Returns the last tick of the provided time in the form:
+// yyyy-mm-dd 23:59:59.999999999
+func lastTick(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d+1, 0, 0, 0, -1, t.Location())
 }

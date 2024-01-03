@@ -343,7 +343,7 @@ func TestFormatTasks(t *testing.T) {
 		completeTask(id, db)
 	}
 
-	tp := getTasks(db)
+	tp := getTasks(db, TASKS_BUCKET)
 	result := formatTasks(tp)
 
 	if result != expected {
