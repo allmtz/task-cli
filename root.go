@@ -57,6 +57,7 @@ var doCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		db := Connect()
 		defer db.Close()
+		var keys []int
 		for _, v := range args {
 			id, err := strconv.Atoi(v)
 			if err != nil {
@@ -64,8 +65,12 @@ var doCmd = &cobra.Command{
 				fmt.Printf("%s is not a number\n", v)
 				os.Exit(1)
 			}
+			keys = append(keys, id)
 			completeTask(id, db)
 			fmt.Printf("Completed task %d\n", id)
+		}
+		if DeleteOnDo {
+			deleteKeys(keys, db, TASKS_BUCKET)
 		}
 		fmt.Println()
 		tp := getTasks(db, TASKS_BUCKET)
@@ -439,6 +444,9 @@ var ExcludeTags string
 var UpdatedDesc string
 var UpdateStatus bool
 
+// $ do
+var DeleteOnDo bool
+
 // $ stats
 var StartTime string
 var EndTime string
@@ -480,6 +488,8 @@ func init() {
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
+
+	doCmd.Flags().BoolVarP(&DeleteOnDo, "finish", "f", false, "Complete and finish the specified tasks")
 
 	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
 	listCmd.Flags().StringVarP(&ExcludeTags, "exclude", "e", "", "Exclude tasks with listed tags. The tags should be comma seperated. Example: -e=tag1,tag2,tag3")
