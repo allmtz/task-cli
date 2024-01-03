@@ -154,18 +154,33 @@ func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 }
 
 var listCmd = &cobra.Command{
-	Use:   "list -[t]",
+	Use:   "list -[te]",
 	Short: "List all of your incomplete tasks",
 	Run: func(cmd *cobra.Command, args []string) {
 		db := Connect()
 		defer db.Close()
 
-		input := strings.Join(args, " ")
-		tasks := getTasks(db)
-		if len(input) >= 1 {
-			t, _ := parseTags(input)
-			tasks = filterTasks(tasks, t)
+		var exclude []string
+		var include []string
+
+		exclude = strings.Split(ExcludeTags, ",")
+		// Avoids buggy behavior when user inputs "-e" or "-e="
+		if len(exclude) == 1 && exclude[0] == "" {
+			exclude = []string{}
 		}
+
+		input := strings.Join(args, " ")
+		if len(input) >= 1 {
+			include, _ = parseTags(input)
+		}
+
+		if len(include) > 0 && len(exclude) > 0 {
+			fmt.Println("Can't use tag filtering in combination with exclude flag")
+			return
+		}
+
+		tasks := getTasks(db)
+		tasks = filterTasks(tasks, include, exclude)
 		fmt.Println(formatTasks(tasks))
 	},
 }
@@ -299,24 +314,35 @@ var tagsCmd = &cobra.Command{
 		db := Connect()
 		defer db.Close()
 
-		var tags []string
-		db.View(func(tx *bolt.Tx) error {
-			b := tx.Bucket(TASKS_BUCKET)
-			return b.ForEach(func(k, v []byte) error {
-				t := bToTask(v)
-				if t.Tag != "" && !slices.Contains(tags, t.Tag) {
-					tags = append(tags, t.Tag)
-				}
-				return nil
-			})
-		})
-		fmt.Println(strings.Join(tags, ", "))
+		tags := getAllTags(db)
+		fmt.Println(strings.Join(tags, ","))
 	},
 }
 
+func getAllTags(db *bolt.DB) []string {
+	var tags []string
+	db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(TASKS_BUCKET)
+		return b.ForEach(func(k, v []byte) error {
+			t := bToTask(v)
+			if t.Tag != "" && !slices.Contains(tags, t.Tag) {
+				tags = append(tags, t.Tag)
+			}
+			return nil
+		})
+	})
+	return tags
+}
+
 // Flags
+// $ archive
 var ClearArchive bool
+
+// $ list
 var ShowTags bool
+var ExcludeTags string
+
+// $ update
 var UpdatedDesc string
 var UpdateStatus bool
 
@@ -354,6 +380,7 @@ func init() {
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
 	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
+	listCmd.Flags().StringVarP(&ExcludeTags, "exclude", "e", "", "Exclude tasks with listed tags. The tags should be comma seperated. Example: -e=tag1,tag2,tag3")
 }
 
 var TASKS_BUCKET = []byte("tasks")
@@ -514,22 +541,41 @@ func updateTask(db *bolt.DB, taskId int, updated Task) error {
 }
 
 // Filter tasks by tag. Returns a slice of tasks whose tag is present in `include`.
-func filterTasks(tp []TaskPosition, include []string) []TaskPosition {
+// One on the []string must be empty i.e. can only include or exclude, can't do both.
+func filterTasks(tp []TaskPosition, include, exclude []string) []TaskPosition {
 	// no tags to filter by, return tp
-	if len(include) == 0 {
+	if len(include) == 0 && len(exclude) == 0 {
 		return tp
 	}
 
 	var filtered []TaskPosition
+
+	// First filter out any unwanted tasks
+	excludeNoTag := slices.Contains(exclude, "none")
+	for _, t := range tp {
+		if slices.Contains(exclude, t.task.Tag) {
+			continue
+		}
+		if t.task.Tag == "" && excludeNoTag {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+
+	var finalFilter []TaskPosition
+
 	// "none" tag can be used to filter tasks with no tag
 	includeNoTag := slices.Contains(include, "none")
-	for _, t := range tp {
+	for _, t := range filtered {
 		if t.task.Tag == "" && includeNoTag {
-			filtered = append(filtered, t)
+			finalFilter = append(finalFilter, t)
 		}
 		if slices.Contains(include, t.task.Tag) {
-			filtered = append(filtered, t)
+			finalFilter = append(finalFilter, t)
 		}
+	}
+	if len(include) > 0 {
+		return finalFilter
 	}
 	return filtered
 }
