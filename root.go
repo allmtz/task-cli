@@ -116,8 +116,10 @@ func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 			if UpdateStatus {
 				if t.Status == STATUS.COMPLETE {
 					t.Status = STATUS.INCOMPLETE
+					t.Completed = ""
 				} else {
 					t.Status = STATUS.COMPLETE
+					t.Completed = time.Now().Format(RFC3339)
 				}
 			}
 
@@ -387,16 +389,19 @@ var TASKS_BUCKET = []byte("tasks")
 var ARCHIVE_BUCKET = []byte("archive")
 var STATUS = TaskStatus{"complete", "incomplete"}
 
+var RFC3339 = "2006-01-02T15:04:05Z07:00"
+
 type TaskStatus struct {
 	COMPLETE   string
 	INCOMPLETE string
 }
 
 type Task struct {
-	Desc    string
-	Status  string
-	Created string
-	Tag     string
+	Desc      string
+	Status    string
+	Created   string
+	Completed string
+	Tag       string
 }
 
 type TaskPosition struct {
@@ -468,10 +473,11 @@ func insert(db *bolt.DB, bucket []byte, s string, tag string) error {
 		byteId := itob(int(id))
 
 		task := Task{
-			Desc:    s,
-			Status:  STATUS.INCOMPLETE,
-			Created: time.Now().String(),
-			Tag:     tag,
+			Desc:      s,
+			Status:    STATUS.INCOMPLETE,
+			Created:   time.Now().Format(RFC3339),
+			Completed: "",
+			Tag:       tag,
 		}
 
 		// Marshal Task data into bytes.
@@ -686,6 +692,7 @@ func completeTask(taskID int, db *bolt.DB) {
 		}
 
 		t.Status = STATUS.COMPLETE
+		t.Completed = time.Now().Format(RFC3339)
 		updatedTask, err := json.Marshal(t)
 		check(err)
 
