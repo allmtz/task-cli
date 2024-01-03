@@ -377,8 +377,15 @@ var statsCmd = &cobra.Command{
 		}
 		sy, sm, sd := startDate.Date()
 		ey, em, ed := endDate.Date()
+		numCompleted := max(len(filtered), 0)
 
-		fmt.Printf("\nYou completed %d tasks from %d/%d/%d to %d/%d/%d\n", max(len(filtered), 0), sm, sd, sy, em, ed, ey)
+		fmt.Printf("\nYou completed %d tasks from %d/%d/%d to %d/%d/%d\n", numCompleted, sm, sd, sy, em, ed, ey)
+		if ShowAverage {
+			diff := endDate.Sub(startDate)
+			numDays := diff.Hours() / 24
+			avg := float64(numCompleted) / numDays
+			fmt.Printf("Average: %.1f/day\n", avg)
+		}
 	},
 }
 
@@ -437,6 +444,7 @@ var StartTime string
 var EndTime string
 var OnDay string
 var ShowCompleted bool
+var ShowAverage bool
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -480,6 +488,7 @@ func init() {
 	statsCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
 	statsCmd.Flags().StringVarP(&OnDay, "on", "o", "", "mm/dd/yyyy formated date. Shorthand for setting the start and end date to the same day. Note that the on flag cannot be used with the start or end flags")
 	statsCmd.Flags().BoolVarP(&ShowCompleted, "verbose", "v", false, "Show the completed tasks")
+	statsCmd.Flags().BoolVarP(&ShowAverage, "average", "a", false, "Show the average tasks completed/day")
 	statsCmd.MarkFlagsMutuallyExclusive("start", "on")
 	statsCmd.MarkFlagsMutuallyExclusive("end", "on")
 
