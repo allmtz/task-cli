@@ -422,11 +422,6 @@ func setup() (*bolt.DB, string) {
 
 // Deletes the db at the designated path
 func teardown(db *bolt.DB, path string) {
-	db.Update(func(tx *bolt.Tx) error {
-		tx.DeleteBucket(TASKS_BUCKET)
-		tx.DeleteBucket(ARCHIVE_BUCKET)
-		return nil
-	})
 	db.Close()
 	os.Remove(path)
 }
