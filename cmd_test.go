@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/boltdb/bolt"
 )
@@ -395,7 +396,7 @@ func TestParseTags(t *testing.T) {
 
 func setup() (*bolt.DB, string) {
 	path := filepath.Join(os.TempDir(), "task-test.db")
-	db, err := bolt.Open(path, 0600, nil)
+	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	check(err)
 	db.Update(func(tx *bolt.Tx) error {
 		tx.CreateBucketIfNotExists(TASKS_BUCKET)
