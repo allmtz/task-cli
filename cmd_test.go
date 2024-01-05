@@ -12,14 +12,19 @@ import (
 	"github.com/boltdb/bolt"
 )
 
+// The update cmd opens a connection with db ->
+// Must close any open db sessions before executing the command.
+// In cases where the db needs to be acessed to validate that the command worked,
+// a new connection to db has to be opened.
 func TestUpdateCmd(t *testing.T) {
 	db, path := setup()
+	db.Close()
 	defer teardown(db, path)
 
 	// buf will hold any outputs to stdout from the update command, outputs to stderr, and the command "Usage" text,
 	// this eliminates the noise when running "$ go test"
 	buf := new(bytes.Buffer)
-	uCmd := newUpdateCmd(db, buf)
+	uCmd := newUpdateCmd(path, buf)
 	uCmd.SetOut(buf)
 	uCmd.SetErr(buf)
 
@@ -53,6 +58,7 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Should error when ID is 0")
 	}
 
+	db = openConnection(path)
 	strs := []string{"a"}
 	for _, s := range strs {
 		err := insert(db, TASKS_BUCKET, s, "")
@@ -60,6 +66,7 @@ func TestUpdateCmd(t *testing.T) {
 			t.Fatalf("Failed to insert into db: %v", err)
 		}
 	}
+	db.Close()
 
 	uCmd.SetArgs([]string{"1"})
 	err = uCmd.Execute()
@@ -77,10 +84,12 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
+	db = openConnection(path)
 	task, err := getTask(db, 1)
 	if err != nil {
 		t.Fatalf("Error retrieving task: %v ", err)
 	}
+	db.Close()
 
 	if task.Desc != updatedDesc || task.Status != STATUS.COMPLETE {
 		t.Fatalf("Task did not update correctly. Expected: \"1. %s %s\". Got: \"1. %s %s\"", updatedDesc, STATUS.COMPLETE, task.Desc, task.Status)
@@ -93,10 +102,12 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
+	db = openConnection(path)
 	t2, err := getTask(db, 1)
 	if err != nil {
 		t.Fatalf("Error retrieving task: %v", err)
 	}
+	db.Close()
 
 	if t2.Desc != "hmm" || t2.Status != STATUS.INCOMPLETE || t2.Tag != "test" {
 		t.Fatalf("Task did not update correctly\nGot:%v", t2)
@@ -394,6 +405,9 @@ func TestParseTags(t *testing.T) {
 	}
 }
 
+// Creates and connects to a temporary file to serve as the db.
+// Also initializes the task and archive buckets.
+// Returns the db and its path
 func setup() (*bolt.DB, string) {
 	path := filepath.Join(os.TempDir(), "task-test.db")
 	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 1 * time.Second})
@@ -406,6 +420,7 @@ func setup() (*bolt.DB, string) {
 	return db, path
 }
 
+// Deletes the db at the designated path
 func teardown(db *bolt.DB, path string) {
 	db.Update(func(tx *bolt.Tx) error {
 		tx.DeleteBucket(TASKS_BUCKET)
@@ -414,4 +429,15 @@ func teardown(db *bolt.DB, path string) {
 	})
 	db.Close()
 	os.Remove(path)
+}
+
+// Creates and opens a db at the given path.
+// IMPORTANT: This fn Exits the program if it fails to connect to the db.
+func openConnection(path string) *bolt.DB {
+	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 1 * time.Second})
+	if err != nil {
+		fmt.Printf("Error connecting to database\npath:%s\nErr:%v\n", path, err)
+		os.Exit(1)
+	}
+	return db
 }

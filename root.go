@@ -78,12 +78,16 @@ var doCmd = &cobra.Command{
 	},
 }
 
-func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "update [taskID] [-ds]",
 		Short:         "Update a task",
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
+			check(err)
+			defer db.Close()
+
 			// Setting this to true at the start of the RunE instead of the cmd itself
 			// ensures that flag parsing errors will still display the usage message
 			cmd.SilenceUsage = true
@@ -471,7 +475,7 @@ func init() {
 	db := Connect()
 	defer db.Close()
 
-	updateCmd := newUpdateCmd(db, os.Stdout)
+	updateCmd := newUpdateCmd(db.Path(), os.Stdout)
 
 	// add sub commands
 	rootCmd.AddCommand(
