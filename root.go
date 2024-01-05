@@ -80,9 +80,9 @@ var doCmd = &cobra.Command{
 
 func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "update [taskID] [-ds]",
-		Short:         "Update a task",
-		SilenceErrors: true,
+		Use:   "update [taskID] [-ds]",
+		Short: "Update a task",
+		// SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
 			check(err)
@@ -94,29 +94,25 @@ func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
 
 			// Make sure exactly 1 argument is passed in
 			if len(args) != 1 {
-				fmt.Fprint(out, "Must specify a single task to update\n")
-				return errors.New("")
+				return errors.New("Must specify a single task to update")
 			}
 
 			// Make sure the argument is an int
 			id, err := strconv.Atoi(args[0])
 			if err != nil {
-				fmt.Fprintf(out, "Argument should an integer\n\"%s\" is not an integer\n", args[0])
-				return errors.New("")
+				return errors.New(fmt.Sprintf("Argument should be an integer\n\"%s\" is not an integer", args[0]))
 			}
 
 			// Make sure the input number is a valid taskID
 			taskCount := getCount(db, TASKS_BUCKET)
 			if id > taskCount || id == 0 {
-				fmt.Fprintf(out, "Invalid task ID, %d tasks exist\n", taskCount)
-				return errors.New("")
+				return errors.New(fmt.Sprintf("Invalid task ID, %d tasks exist", taskCount))
 			}
 
 			// Return early if there's no update to make
 			if UpdatedDesc == "" && !UpdateStatus {
 				cmd.SilenceUsage = false
-				fmt.Fprintf(out, "Did not make any updates, try using a flag\n")
-				return errors.New("")
+				return errors.New("Did not make any updates, try using a flag")
 			}
 
 			t, _ := getTask(db, id)
@@ -137,8 +133,7 @@ func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
 				// Update the tag if a tag is present in the input
 				tags, s := parseTags(UpdatedDesc)
 				if s == "" {
-					fmt.Fprintf(out, "Must provide a task description\n")
-					return errors.New("")
+					return errors.New("Must provide a task description")
 				}
 				if len(tags) >= 1 {
 					t.Tag = tags[0]
