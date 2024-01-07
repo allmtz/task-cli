@@ -52,7 +52,7 @@ func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 }
 
 func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
-	return &cobra.Command{
+	doCmd := &cobra.Command{
 		Use:   "do [taskID]",
 		Short: "Mark a task on your TODO list as complete",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -76,6 +76,8 @@ func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 			fmt.Fprintln(out, formatTasks(tp))
 		},
 	}
+	doCmd.Flags().BoolVarP(&DeleteOnDo, "finish", "f", false, "Complete and finish the specified tasks")
+	return doCmd
 }
 
 func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
@@ -265,42 +267,44 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
-var archiveCmd = &cobra.Command{
-	Use:   "archive -[c]",
-	Short: "View all previously completed tasks",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
-
-		if ClearArchive {
-			db.Update(func(tx *bolt.Tx) error {
-				er := tx.DeleteBucket(ARCHIVE_BUCKET)
-				check(er)
-				return nil
-			})
-			fmt.Println("Cleared the archive")
-			return
-		}
-
-		db.View(func(tx *bolt.Tx) error {
-			archive := tx.Bucket(ARCHIVE_BUCKET)
-			if archive == nil || archive.Stats().KeyN == 0 {
-				fmt.Println("Archive is empty, finish a task to add it to the archive")
-				return nil
+func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	arCmd := &cobra.Command{
+		Use:   "archive -[c]",
+		Short: "View all previously completed tasks",
+		Run: func(cmd *cobra.Command, args []string) {
+			if ClearArchive {
+				db.Update(func(tx *bolt.Tx) error {
+					er := tx.DeleteBucket(ARCHIVE_BUCKET)
+					check(er)
+					return nil
+				})
+				fmt.Fprintln(out, "Cleared the archive")
+				return
 			}
 
-			archive.ForEach(func(k, v []byte) error {
-				var task Task
-				json.Unmarshal(v, &task)
+			db.View(func(tx *bolt.Tx) error {
+				archive := tx.Bucket(ARCHIVE_BUCKET)
+				if archive == nil || archive.Stats().KeyN == 0 {
+					fmt.Fprintln(out, "Archive is empty, finish a task to add it to the archive")
+					return nil
+				}
 
-				idx := binary.BigEndian.Uint64(k)
-				fmt.Printf("%d: %s\n", idx, task.Desc)
+				archive.ForEach(func(k, v []byte) error {
+					var task Task
+					json.Unmarshal(v, &task)
+
+					idx := binary.BigEndian.Uint64(k)
+					fmt.Fprintf(out, "%d: %s\n", idx, task.Desc)
+					return nil
+				})
 				return nil
 			})
-			return nil
-		})
-	},
+		},
+	}
+	arCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
+	return arCmd
 }
+
 var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "See statistics on your task completion",
@@ -479,6 +483,8 @@ func init() {
 	listCmd := newListCmd(db, osOut)
 	finishCmd := newFinishCmd(db, osOut)
 	clearCmd := newClearCmd(db, osOut)
+	archiveCmd := newArchiveCmd(db, osOut)
+
 	// add sub commands
 	rootCmd.AddCommand(
 		addCmd, doCmd,
@@ -493,9 +499,6 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
-
-	doCmd.Flags().BoolVarP(&DeleteOnDo, "finish", "f", false, "Complete and finish the specified tasks")
 
 	statsCmd.Flags().StringVarP(&StartTime, "start", "s", "", "mm/dd/yyyy formated date to specify the start period")
 	statsCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
