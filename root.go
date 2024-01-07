@@ -404,15 +404,15 @@ func newStatsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return sCmd
 }
 
-var countCmd = &cobra.Command{
-	Use:   "count",
-	Short: "Print the number of existing tasks",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
-		num := getCount(db, TASKS_BUCKET)
-		fmt.Printf("%d tasks\n", num)
-	},
+func newCountCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "count",
+		Short: "Print the number of existing tasks",
+		Run: func(cmd *cobra.Command, args []string) {
+			num := getCount(db, TASKS_BUCKET)
+			fmt.Fprintf(out, "%d tasks\n", num)
+		},
+	}
 }
 
 var tagsCmd = &cobra.Command{
@@ -493,6 +493,7 @@ func init() {
 	archiveCmd := newArchiveCmd(db, osOut)
 	deleteCmd := newDeleteCmd(db, osOut)
 	statsCmd := newStatsCmd(db, osOut)
+	countCmd := newCountCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
