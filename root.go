@@ -224,49 +224,48 @@ func newClearCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete a task",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newDeleteCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a task",
+		Run: func(cmd *cobra.Command, args []string) {
+			var ids []int
+			taskCount := getCount(db, TASKS_BUCKET)
 
-		var ids []int
-		taskCount := getCount(db, TASKS_BUCKET)
-		for _, s := range args {
-			id, err := strconv.Atoi(s)
-			if err != nil {
-				println("Arguments should only be numbers")
-				fmt.Printf("%s is not a number\n", args[0])
-				os.Exit(1)
+			for _, s := range args {
+				id, err := strconv.Atoi(s)
+				if err != nil {
+					fmt.Fprintln(out, "Arguments should only be numbers")
+					fmt.Fprintf(out, "%s is not a number\n", args[0])
+					os.Exit(1)
+				}
+				if id > taskCount {
+					fmt.Fprintf(out, "%d is out of range, only %d tasks exist\n", id, taskCount)
+					return
+				}
+				ids = append(ids, id)
 			}
-			if id > taskCount {
-				fmt.Printf("%d is out of range, only %d tasks exist\n", id, taskCount)
+
+			if len(ids) == 1 {
+				er := deleteKey(ids[0], db, TASKS_BUCKET)
+				check(er)
+				fmt.Fprintf(out, "Deleted task %d\n", ids[0])
+				tp := getTasks(db, TASKS_BUCKET)
+				fmt.Fprintln(out, formatTasks(tp))
 				return
 			}
-			ids = append(ids, id)
-		}
 
-		if len(ids) == 1 {
-			er := deleteKey(ids[0], db, TASKS_BUCKET)
-			check(er)
-			fmt.Printf("Deleted task %d\n", ids[0])
+			deleteKeys(ids, db, TASKS_BUCKET)
+			for _, n := range ids {
+				fmt.Fprintln(out, "Deleted Task ", n)
+			}
+
+			fmt.Fprintln(out)
 			tp := getTasks(db, TASKS_BUCKET)
-			fmt.Println(formatTasks(tp))
-			return
-		}
-
-		deleteKeys(ids, db, TASKS_BUCKET)
-		for _, n := range ids {
-			fmt.Println("Deleted Task ", n)
-		}
-
-		fmt.Println()
-		tp := getTasks(db, TASKS_BUCKET)
-		fmt.Println(formatTasks(tp))
-	},
+			fmt.Fprintln(out, formatTasks(tp))
+		},
+	}
 }
-
 func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	arCmd := &cobra.Command{
 		Use:   "archive -[c]",
@@ -484,6 +483,7 @@ func init() {
 	finishCmd := newFinishCmd(db, osOut)
 	clearCmd := newClearCmd(db, osOut)
 	archiveCmd := newArchiveCmd(db, osOut)
+	deleteCmd := newDeleteCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
