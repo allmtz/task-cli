@@ -415,16 +415,15 @@ func newCountCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-var tagsCmd = &cobra.Command{
-	Use:   "tags",
-	Short: "Print existing tags",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
-
-		tags := getAllTags(db)
-		fmt.Println(strings.Join(tags, ","))
-	},
+func newTagsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tags",
+		Short: "Print existing tags",
+		Run: func(cmd *cobra.Command, args []string) {
+			tags := getAllTags(db)
+			fmt.Fprintln(out, strings.Join(tags, ","))
+		},
+	}
 }
 
 func getAllTags(db *bolt.DB) []string {
@@ -494,6 +493,7 @@ func init() {
 	deleteCmd := newDeleteCmd(db, osOut)
 	statsCmd := newStatsCmd(db, osOut)
 	countCmd := newCountCmd(db, osOut)
+	tagsCmd := newTagsCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
