@@ -25,30 +25,30 @@ var rootCmd = &cobra.Command{
 }
 
 // Subcommands
-var addCmd = &cobra.Command{
-	Use:   "add [task]",
-	Short: "Add a new task to your TODO list",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "add [task]",
+		Short: "Add a new task to your TODO list",
+		Run: func(cmd *cobra.Command, args []string) {
+			tags, parsed := parseTags(strings.Join(args, " "))
 
-		tags, parsed := parseTags(strings.Join(args, " "))
+			if parsed == "" {
+				fmt.Fprintf(out, "Error: Empty task\n")
+				return
+			}
 
-		if parsed == "" {
-			fmt.Println("Error: Empty task")
-			return
-		}
+			var tag = ""
+			if len(tags) >= 1 {
+				// For now, only add the first tag to a task
+				tag = tags[0]
+			}
 
-		var tag = ""
-		if len(tags) >= 1 {
-			// For now, only add the first tag to a task
-			tag = tags[0]
-		}
+			err := insert(db, TASKS_BUCKET, parsed, tag)
+			check(err)
+			fmt.Fprintf(out, "Added task: '%s'\n", parsed)
 
-		err := insert(db, TASKS_BUCKET, parsed, tag)
-		check(err)
-		fmt.Printf("Added task: '%s'\n", parsed)
-	},
+		},
+	}
 }
 
 var doCmd = &cobra.Command{
@@ -470,6 +470,7 @@ func init() {
 	db := Connect()
 	defer db.Close()
 
+	addCmd := newAddCmd(db, os.Stdout)
 	updateCmd := newUpdateCmd(db.Path(), os.Stdout)
 
 	// add sub commands
