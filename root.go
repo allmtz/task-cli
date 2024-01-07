@@ -51,31 +51,33 @@ func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-var doCmd = &cobra.Command{
-	Use:   "do [taskID]",
-	Short: "Mark a task on your TODO list as complete",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
-		var keys []int
-		for _, v := range args {
-			id, err := strconv.Atoi(v)
-			if err != nil {
-				println("Arguments should only be numbers")
-				fmt.Printf("%s is not a number\n", v)
-				os.Exit(1)
+func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "do [taskID]",
+		Short: "Mark a task on your TODO list as complete",
+		Run: func(cmd *cobra.Command, args []string) {
+			db := Connect()
+			defer db.Close()
+			var keys []int
+			for _, v := range args {
+				id, err := strconv.Atoi(v)
+				if err != nil {
+					fmt.Fprintln(out, "Arguments should only be numbers")
+					fmt.Fprintf(out, "%s is not a number\n", v)
+					os.Exit(1)
+				}
+				keys = append(keys, id)
+				completeTask(id, db)
+				fmt.Fprintf(out, "Completed task %d\n", id)
 			}
-			keys = append(keys, id)
-			completeTask(id, db)
-			fmt.Printf("Completed task %d\n", id)
-		}
-		if DeleteOnDo {
-			deleteKeys(keys, db, TASKS_BUCKET)
-		}
-		fmt.Println()
-		tp := getTasks(db, TASKS_BUCKET)
-		fmt.Println(formatTasks(tp))
-	},
+			if DeleteOnDo {
+				deleteKeys(keys, db, TASKS_BUCKET)
+			}
+			fmt.Fprintln(out)
+			tp := getTasks(db, TASKS_BUCKET)
+			fmt.Fprintln(out, formatTasks(tp))
+		},
+	}
 }
 
 func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
@@ -462,6 +464,7 @@ func Execute() {
 	}
 }
 
+// MIGRATING, NEED TO MOVE ALL THIS CODE TO main.go
 func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
@@ -471,6 +474,7 @@ func init() {
 	defer db.Close()
 
 	addCmd := newAddCmd(db, os.Stdout)
+	doCmd := newDoCmd(db, os.Stdout)
 	updateCmd := newUpdateCmd(db.Path(), os.Stdout)
 
 	// add sub commands
