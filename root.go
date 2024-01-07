@@ -266,6 +266,7 @@ func newDeleteCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 		},
 	}
 }
+
 func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	arCmd := &cobra.Command{
 		Use:   "archive -[c]",
@@ -304,96 +305,103 @@ func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return arCmd
 }
 
-var statsCmd = &cobra.Command{
-	Use:   "stats",
-	Short: "See statistics on your task completion",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newStatsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	sCmd := &cobra.Command{
+		Use:   "stats",
+		Short: "See statistics on your task completion",
+		Run: func(cmd *cobra.Command, args []string) {
+			// Define the expected date format
+			mmddyyyy := "01/02/2006"
+			var startDate time.Time
+			var endDate time.Time
+			var mustInputStart bool
+			var err error
 
-		// Define the expected date format
-		mmddyyyy := "01/02/2006"
-		var startDate time.Time
-		var endDate time.Time
-		var mustInputStart bool
-		var err error
+			// Attempt to parse using mm/dd/yyy format
+			endDate, err = time.Parse(mmddyyyy, EndTime)
+			if err == nil {
+				mustInputStart = true
+			} else {
+				// Defaults to now
+				endDate = time.Now()
+			}
 
-		// Attempt to parse using mm/dd/yyy format
-		endDate, err = time.Parse(mmddyyyy, EndTime)
-		if err == nil {
-			mustInputStart = true
-		} else {
-			// Defaults to now
-			endDate = time.Now()
-		}
-
-		// Attempt to parse using mm/dd/yyy format
-		startDate, err = time.Parse(mmddyyyy, StartTime)
-		if err != nil && mustInputStart {
-			// User input an end but no start
-			fmt.Println("Must specify a start date")
-			return
-		}
-		if err != nil {
-			// Defaults to last 24hrs
-			startDate, err = time.Parse(RFC3339, time.Now().Add(-24*time.Hour).Format(RFC3339))
-			if err != nil {
-				fmt.Println("Error parsing start date:", err)
+			// Attempt to parse using mm/dd/yyy format
+			startDate, err = time.Parse(mmddyyyy, StartTime)
+			if err != nil && mustInputStart {
+				// User input an end but no start
+				fmt.Fprintln(out, "Must specify a start date")
 				return
 			}
-		}
-
-		if endDate.Before(startDate) {
-			fmt.Println("Error: End date occured prior to the Start date")
-			return
-		}
-
-		if OnDay != "" {
-			day, err := time.Parse(mmddyyyy, OnDay)
 			if err != nil {
-				fmt.Println("Error parsing date:", err)
-				return
+				// Defaults to last 24hrs
+				startDate, err = time.Parse(RFC3339, time.Now().Add(-24*time.Hour).Format(RFC3339))
+				if err != nil {
+					fmt.Fprintln(out, "Error parsing start date:", err)
+					return
+				}
 			}
-			startDate = day
-			endDate = day
-		}
 
-		// If the user inputs the same start and end date, then set the end date to the last tick (12:59) of that day.
-		if startDate.Equal(endDate) {
-			endDate = lastTick(endDate)
-		}
-
-		var filtered []TaskPosition
-		tasks := getTasks(db, ARCHIVE_BUCKET)
-		for _, t := range tasks {
-			completed, err := time.Parse(RFC3339, t.task.Completed)
-			if err != nil {
-				fmt.Println("Error parsing completed date:", err)
+			if endDate.Before(startDate) {
+				fmt.Fprintln(out, "Error: End date occured prior to the Start date")
 				return
 			}
 
-			if completed.After(startDate) && completed.Before(endDate) {
-				filtered = append(filtered, t)
-				// Useful for debugging
-				// fmt.Println(completed)
+			if OnDay != "" {
+				day, err := time.Parse(mmddyyyy, OnDay)
+				if err != nil {
+					fmt.Fprintln(out, "Error parsing date:", err)
+					return
+				}
+				startDate = day
+				endDate = day
 			}
-		}
 
-		if ShowCompleted {
-			fmt.Println(formatTasks(filtered))
-		}
-		sy, sm, sd := startDate.Date()
-		ey, em, ed := endDate.Date()
-		numCompleted := max(len(filtered), 0)
+			// If the user inputs the same start and end date, then set the end date to the last tick (12:59) of that day.
+			if startDate.Equal(endDate) {
+				endDate = lastTick(endDate)
+			}
 
-		fmt.Printf("\nYou completed %d tasks from %d/%d/%d to %d/%d/%d\n", numCompleted, sm, sd, sy, em, ed, ey)
-		if ShowAverage {
-			diff := endDate.Sub(startDate)
-			numDays := diff.Hours() / 24
-			avg := float64(numCompleted) / numDays
-			fmt.Printf("Average: %.1f/day\n", avg)
-		}
-	},
+			var filtered []TaskPosition
+			tasks := getTasks(db, ARCHIVE_BUCKET)
+			for _, t := range tasks {
+				completed, err := time.Parse(RFC3339, t.task.Completed)
+				if err != nil {
+					fmt.Fprintln(out, "Error parsing completed date:", err)
+					return
+				}
+
+				if completed.After(startDate) && completed.Before(endDate) {
+					filtered = append(filtered, t)
+					// Useful for debugging
+					// fmt.Fprintln(out, completed)
+				}
+			}
+
+			if ShowCompleted {
+				fmt.Fprintln(out, formatTasks(filtered))
+			}
+			sy, sm, sd := startDate.Date()
+			ey, em, ed := endDate.Date()
+			numCompleted := max(len(filtered), 0)
+
+			fmt.Fprintf(out, "\nYou completed %d tasks from %d/%d/%d to %d/%d/%d\n", numCompleted, sm, sd, sy, em, ed, ey)
+			if ShowAverage {
+				diff := endDate.Sub(startDate)
+				numDays := diff.Hours() / 24
+				avg := float64(numCompleted) / numDays
+				fmt.Fprintf(out, "Average: %.1f/day\n", avg)
+			}
+		},
+	}
+	sCmd.Flags().StringVarP(&StartTime, "start", "s", "", "mm/dd/yyyy formated date to specify the start period")
+	sCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
+	sCmd.Flags().StringVarP(&OnDay, "on", "o", "", "mm/dd/yyyy formated date. Shorthand for setting the start and end date to the same day. Note that the on flag cannot be used with the start or end flags")
+	sCmd.Flags().BoolVarP(&ShowCompleted, "verbose", "v", false, "Show the completed tasks")
+	sCmd.Flags().BoolVarP(&ShowAverage, "average", "a", false, "Show the average tasks completed/day")
+	sCmd.MarkFlagsMutuallyExclusive("start", "on")
+	sCmd.MarkFlagsMutuallyExclusive("end", "on")
+	return sCmd
 }
 
 var countCmd = &cobra.Command{
@@ -484,6 +492,7 @@ func init() {
 	clearCmd := newClearCmd(db, osOut)
 	archiveCmd := newArchiveCmd(db, osOut)
 	deleteCmd := newDeleteCmd(db, osOut)
+	statsCmd := newStatsCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
@@ -499,14 +508,6 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
-	statsCmd.Flags().StringVarP(&StartTime, "start", "s", "", "mm/dd/yyyy formated date to specify the start period")
-	statsCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
-	statsCmd.Flags().StringVarP(&OnDay, "on", "o", "", "mm/dd/yyyy formated date. Shorthand for setting the start and end date to the same day. Note that the on flag cannot be used with the start or end flags")
-	statsCmd.Flags().BoolVarP(&ShowCompleted, "verbose", "v", false, "Show the completed tasks")
-	statsCmd.Flags().BoolVarP(&ShowAverage, "average", "a", false, "Show the average tasks completed/day")
-	statsCmd.MarkFlagsMutuallyExclusive("start", "on")
-	statsCmd.MarkFlagsMutuallyExclusive("end", "on")
 
 }
 
