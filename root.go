@@ -208,19 +208,18 @@ func newFinishCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-var clearCmd = &cobra.Command{
-	Use:   "clear",
-	Short: "Delete all tasks",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
-
-		db.Update(func(tx *bolt.Tx) error {
-			tx.DeleteBucket(TASKS_BUCKET)
-			return nil
-		})
-		fmt.Println("Deleted all tasks")
-	},
+func newClearCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "Delete all tasks",
+		Run: func(cmd *cobra.Command, args []string) {
+			db.Update(func(tx *bolt.Tx) error {
+				tx.DeleteBucket(TASKS_BUCKET)
+				return nil
+			})
+			fmt.Fprintln(out, "Deleted all tasks")
+		},
+	}
 }
 
 var deleteCmd = &cobra.Command{
@@ -479,7 +478,7 @@ func init() {
 	updateCmd := newUpdateCmd(db.Path(), osOut)
 	listCmd := newListCmd(db, osOut)
 	finishCmd := newFinishCmd(db, osOut)
-
+	clearCmd := newClearCmd(db, osOut)
 	// add sub commands
 	rootCmd.AddCommand(
 		addCmd, doCmd,
