@@ -193,20 +193,19 @@ func newListCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return lCmd
 }
 
-var finishCmd = &cobra.Command{
-	Use:   "finish",
-	Short: "Delete all completed tasks",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newFinishCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "finish",
+		Short: "Delete all completed tasks",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := finish(db)
+			check(err)
 
-		err := finish(db)
-		check(err)
-
-		fmt.Printf("Deleted all completed tasks\n")
-		tp := getTasks(db, TASKS_BUCKET)
-		fmt.Println(formatTasks(tp))
-	},
+			fmt.Fprintf(out, "Deleted all completed tasks\n")
+			tp := getTasks(db, TASKS_BUCKET)
+			fmt.Fprintln(out, formatTasks(tp))
+		},
+	}
 }
 
 var clearCmd = &cobra.Command{
@@ -479,6 +478,7 @@ func init() {
 	doCmd := newDoCmd(db, osOut)
 	updateCmd := newUpdateCmd(db.Path(), osOut)
 	listCmd := newListCmd(db, osOut)
+	finishCmd := newFinishCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
