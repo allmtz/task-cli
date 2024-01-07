@@ -56,8 +56,6 @@ func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 		Use:   "do [taskID]",
 		Short: "Mark a task on your TODO list as complete",
 		Run: func(cmd *cobra.Command, args []string) {
-			db := Connect()
-			defer db.Close()
 			var keys []int
 			for _, v := range args {
 				id, err := strconv.Atoi(v)
@@ -161,36 +159,38 @@ func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-var listCmd = &cobra.Command{
-	Use:   "list -[te]",
-	Short: "List all of your incomplete tasks",
-	Run: func(cmd *cobra.Command, args []string) {
-		db := Connect()
-		defer db.Close()
+func newListCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+	lCmd := &cobra.Command{
+		Use:   "list -[te]",
+		Short: "List all of your incomplete tasks",
+		Run: func(cmd *cobra.Command, args []string) {
+			var exclude []string
+			var include []string
 
-		var exclude []string
-		var include []string
+			exclude = strings.Split(ExcludeTags, ",")
+			// Avoids buggy behavior when user inputs "-e" or "-e="
+			if len(exclude) == 1 && exclude[0] == "" {
+				exclude = []string{}
+			}
 
-		exclude = strings.Split(ExcludeTags, ",")
-		// Avoids buggy behavior when user inputs "-e" or "-e="
-		if len(exclude) == 1 && exclude[0] == "" {
-			exclude = []string{}
-		}
+			input := strings.Join(args, " ")
+			if len(input) >= 1 {
+				include, _ = parseTags(input)
+			}
 
-		input := strings.Join(args, " ")
-		if len(input) >= 1 {
-			include, _ = parseTags(input)
-		}
+			if len(include) > 0 && len(exclude) > 0 {
+				fmt.Fprintln(out, "Can't use tag filtering in combination with exclude flag")
+				return
+			}
 
-		if len(include) > 0 && len(exclude) > 0 {
-			fmt.Println("Can't use tag filtering in combination with exclude flag")
-			return
-		}
-
-		tasks := getTasks(db, TASKS_BUCKET)
-		tasks = filterTasks(tasks, include, exclude)
-		fmt.Println(formatTasks(tasks))
-	},
+			tasks := getTasks(db, TASKS_BUCKET)
+			tasks = filterTasks(tasks, include, exclude)
+			fmt.Fprintln(out, formatTasks(tasks))
+		},
+	}
+	lCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
+	lCmd.Flags().StringVarP(&ExcludeTags, "exclude", "e", "", "Exclude tasks with listed tags. The tags should be comma seperated. Example: -e=tag1,tag2,tag3")
+	return lCmd
 }
 
 var finishCmd = &cobra.Command{
@@ -473,9 +473,12 @@ func init() {
 	db := Connect()
 	defer db.Close()
 
-	addCmd := newAddCmd(db, os.Stdout)
-	doCmd := newDoCmd(db, os.Stdout)
-	updateCmd := newUpdateCmd(db.Path(), os.Stdout)
+	osOut := os.Stdout
+
+	addCmd := newAddCmd(db, osOut)
+	doCmd := newDoCmd(db, osOut)
+	updateCmd := newUpdateCmd(db.Path(), osOut)
+	listCmd := newListCmd(db, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
@@ -494,9 +497,6 @@ func init() {
 	archiveCmd.Flags().BoolVarP(&ClearArchive, "clear", "c", false, "Delete all archive entries")
 
 	doCmd.Flags().BoolVarP(&DeleteOnDo, "finish", "f", false, "Complete and finish the specified tasks")
-
-	listCmd.Flags().BoolVarP(&ShowTags, "tag", "t", false, "Show tag associated with each task")
-	listCmd.Flags().StringVarP(&ExcludeTags, "exclude", "e", "", "Exclude tasks with listed tags. The tags should be comma seperated. Example: -e=tag1,tag2,tag3")
 
 	statsCmd.Flags().StringVarP(&StartTime, "start", "s", "", "mm/dd/yyyy formated date to specify the start period")
 	statsCmd.Flags().StringVarP(&EndTime, "end", "e", "", "mm/dd/yyyy formated date to specify the end window")
