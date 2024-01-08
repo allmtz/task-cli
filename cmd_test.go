@@ -18,13 +18,12 @@ import (
 // a new connection to db has to be opened.
 func TestUpdateCmd(t *testing.T) {
 	db, path := setup()
-	db.Close()
 	defer teardown(db, path)
 
 	// buf will hold any outputs to stdout from the update command, outputs to stderr, and the command "Usage" text,
 	// this eliminates the noise when running "$ go test"
 	buf := new(bytes.Buffer)
-	uCmd := newUpdateCmd(path, buf)
+	uCmd := newUpdateCmd(db, buf)
 	uCmd.SetOut(buf)
 	uCmd.SetErr(buf)
 
@@ -58,7 +57,6 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Should error when ID is 0")
 	}
 
-	db = openConnection(path)
 	strs := []string{"a"}
 	for _, s := range strs {
 		err := insert(db, TASKS_BUCKET, s, "")
@@ -66,7 +64,6 @@ func TestUpdateCmd(t *testing.T) {
 			t.Fatalf("Failed to insert into db: %v", err)
 		}
 	}
-	db.Close()
 
 	uCmd.SetArgs([]string{"1"})
 	err = uCmd.Execute()
@@ -84,12 +81,10 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	db = openConnection(path)
 	task, err := getTask(db, 1)
 	if err != nil {
 		t.Fatalf("Error retrieving task: %v ", err)
 	}
-	db.Close()
 
 	if task.Desc != updatedDesc || task.Status != STATUS.COMPLETE {
 		t.Fatalf("Task did not update correctly. Expected: \"1. %s %s\". Got: \"1. %s %s\"", updatedDesc, STATUS.COMPLETE, task.Desc, task.Status)
@@ -102,12 +97,10 @@ func TestUpdateCmd(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	db = openConnection(path)
 	t2, err := getTask(db, 1)
 	if err != nil {
 		t.Fatalf("Error retrieving task: %v", err)
 	}
-	db.Close()
 
 	if t2.Desc != "hmm" || t2.Status != STATUS.INCOMPLETE || t2.Tag != "test" {
 		t.Fatalf("Task did not update correctly\nGot:%v", t2)

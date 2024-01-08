@@ -80,16 +80,12 @@ func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return doCmd
 }
 
-func newUpdateCmd(dbPath string, out io.Writer) *cobra.Command {
+func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [taskID] [-ds]",
 		Short: "Update a task",
 		// SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
-			check(err)
-			defer db.Close()
-
 			// Setting this to true at the start of the RunE instead of the cmd itself
 			// ensures that flag parsing errors will still display the usage message
 			cmd.SilenceUsage = true
@@ -472,38 +468,11 @@ func Execute() {
 	}
 }
 
-// MIGRATING, NEED TO MOVE ALL THIS CODE TO main.go
 func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	db := Connect()
-	defer db.Close()
-
-	osOut := os.Stdout
-
-	addCmd := newAddCmd(db, osOut)
-	doCmd := newDoCmd(db, osOut)
-	updateCmd := newUpdateCmd(db.Path(), osOut)
-	listCmd := newListCmd(db, osOut)
-	finishCmd := newFinishCmd(db, osOut)
-	clearCmd := newClearCmd(db, osOut)
-	archiveCmd := newArchiveCmd(db, osOut)
-	deleteCmd := newDeleteCmd(db, osOut)
-	statsCmd := newStatsCmd(db, osOut)
-	countCmd := newCountCmd(db, osOut)
-	tagsCmd := newTagsCmd(db, osOut)
-
-	// add sub commands
-	rootCmd.AddCommand(
-		addCmd, doCmd,
-		updateCmd, listCmd,
-		finishCmd, clearCmd,
-		archiveCmd, deleteCmd,
-		countCmd, tagsCmd,
-		statsCmd,
-	)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.task-cli.yaml)")
 
 	// Cobra also supports local flags, which will only run
