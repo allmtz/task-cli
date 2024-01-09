@@ -25,7 +25,7 @@ var rootCmd = &cobra.Command{
 }
 
 // Subcommands
-func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newAddCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add [task]",
 		Short: "Add a new task to your TODO list",
@@ -43,7 +43,7 @@ func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 				tag = tags[0]
 			}
 
-			err := insert(db, TASKS_BUCKET, parsed, tag)
+			err := insert(mgr.db, TASKS_BUCKET, parsed, tag)
 			check(err)
 			fmt.Fprintf(out, "Added task: '%s'\n", parsed)
 
@@ -51,11 +51,12 @@ func newAddCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newDoCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	doCmd := &cobra.Command{
 		Use:   "do [taskID]",
 		Short: "Mark a task on your TODO list as complete",
 		Run: func(cmd *cobra.Command, args []string) {
+			db := mgr.db
 			var keys []int
 			for _, v := range args {
 				id, err := strconv.Atoi(v)
@@ -80,7 +81,7 @@ func newDoCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return doCmd
 }
 
-func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newUpdateCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [taskID] [-ds]",
 		Short: "Update a task",
@@ -89,6 +90,8 @@ func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 			// Setting this to true at the start of the RunE instead of the cmd itself
 			// ensures that flag parsing errors will still display the usage message
 			cmd.SilenceUsage = true
+
+			db := mgr.db
 
 			// Make sure exactly 1 argument is passed in
 			if len(args) != 1 {
@@ -157,7 +160,7 @@ func newUpdateCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func newListCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newListCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	lCmd := &cobra.Command{
 		Use:   "list -[te]",
 		Short: "List all of your incomplete tasks",
@@ -181,7 +184,7 @@ func newListCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 				return
 			}
 
-			tasks := getTasks(db, TASKS_BUCKET)
+			tasks := getTasks(mgr.db, TASKS_BUCKET)
 			tasks = filterTasks(tasks, include, exclude)
 			fmt.Fprintln(out, formatTasks(tasks))
 		},
@@ -191,11 +194,12 @@ func newListCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return lCmd
 }
 
-func newFinishCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newFinishCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "finish",
 		Short: "Delete all completed tasks",
 		Run: func(cmd *cobra.Command, args []string) {
+			db := mgr.db
 			err := finish(db)
 			check(err)
 
@@ -206,12 +210,12 @@ func newFinishCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-func newClearCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newClearCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "clear",
 		Short: "Delete all tasks",
 		Run: func(cmd *cobra.Command, args []string) {
-			db.Update(func(tx *bolt.Tx) error {
+			mgr.db.Update(func(tx *bolt.Tx) error {
 				tx.DeleteBucket(TASKS_BUCKET)
 				return nil
 			})
@@ -220,11 +224,12 @@ func newClearCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-func newDeleteCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newDeleteCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete",
 		Short: "Delete a task",
 		Run: func(cmd *cobra.Command, args []string) {
+			db := mgr.db
 			var ids []int
 			taskCount := getCount(db, TASKS_BUCKET)
 
@@ -263,11 +268,12 @@ func newDeleteCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	}
 }
 
-func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newArchiveCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	arCmd := &cobra.Command{
 		Use:   "archive -[c]",
 		Short: "View all previously completed tasks",
 		Run: func(cmd *cobra.Command, args []string) {
+			db := mgr.db
 			if ClearArchive {
 				db.Update(func(tx *bolt.Tx) error {
 					er := tx.DeleteBucket(ARCHIVE_BUCKET)
@@ -301,11 +307,12 @@ func newArchiveCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return arCmd
 }
 
-func newStatsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newStatsCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	sCmd := &cobra.Command{
 		Use:   "stats",
 		Short: "See statistics on your task completion",
 		Run: func(cmd *cobra.Command, args []string) {
+			db := mgr.db
 			// Define the expected date format
 			mmddyyyy := "01/02/2006"
 			var startDate time.Time
@@ -400,23 +407,23 @@ func newStatsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
 	return sCmd
 }
 
-func newCountCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newCountCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "count",
 		Short: "Print the number of existing tasks",
 		Run: func(cmd *cobra.Command, args []string) {
-			num := getCount(db, TASKS_BUCKET)
+			num := getCount(mgr.db, TASKS_BUCKET)
 			fmt.Fprintf(out, "%d tasks\n", num)
 		},
 	}
 }
 
-func newTagsCmd(db *bolt.DB, out io.Writer) *cobra.Command {
+func newTagsCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tags",
 		Short: "Print existing tags",
 		Run: func(cmd *cobra.Command, args []string) {
-			tags := getAllTags(db)
+			tags := getAllTags(mgr.db)
 			fmt.Fprintln(out, strings.Join(tags, ","))
 		},
 	}
@@ -478,7 +485,6 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
 }
 
 var TASKS_BUCKET = []byte("tasks")
@@ -486,6 +492,61 @@ var ARCHIVE_BUCKET = []byte("archive")
 var STATUS = TaskStatus{"complete", "incomplete"}
 
 var RFC3339 = "2006-01-02T15:04:05Z07:00"
+
+type BoltManager interface {
+	Connect() *bolt.DB
+	Ping() error
+	Close() error
+}
+
+// Implements BoltManager
+type connectionManager struct {
+	db *bolt.DB
+}
+
+// Returns a db instance
+func (c *connectionManager) Connect() *bolt.DB {
+	hDir, e := os.UserHomeDir()
+	check(e)
+
+	// default is "/task"
+	path := hDir + "/task"
+
+	// creates the `task` dir if it doesn't exist
+	dErr := os.MkdirAll(path, 0777)
+	check(dErr)
+
+	// default is "/tasks.db"
+	db, err := bolt.Open(path+"/tasks.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
+	check(err)
+
+	c.db = db
+	return db
+}
+
+// Validates the connection to db
+func (c *connectionManager) Ping() error {
+	db := c.db.String()
+	if db == `DB<"">` {
+		return errors.New(fmt.Sprintf("Could not establish connection. Pinged db: %s", db))
+	}
+	return nil
+}
+
+// Closes connection to the database
+func (c *connectionManager) Close() error {
+	return c.db.Close()
+}
+
+func newBoltManager() *connectionManager {
+	mgr := new(connectionManager)
+	mgr.db = mgr.Connect()
+	if err := mgr.Ping(); err != nil {
+		fmt.Println("Couldn't connect to the database")
+		os.Exit(1)
+	}
+	return mgr
+}
 
 type TaskStatus struct {
 	COMPLETE   string
@@ -510,23 +571,6 @@ func check(e error) {
 		panic(e)
 	}
 	return
-}
-
-func Connect() *bolt.DB {
-	hDir, e := os.UserHomeDir()
-	check(e)
-
-	// default is "/task"
-	path := hDir + "/task"
-
-	// creates the `task` dir if it doesn't exist
-	dErr := os.MkdirAll(path, 0777)
-	check(dErr)
-
-	// default is "/tasks.db"
-	db, err := bolt.Open(path+"/tasks.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
-	check(err)
-	return db
 }
 
 // Parse any tags in the form "+tag". Returns a slice of tags found and the original string with the

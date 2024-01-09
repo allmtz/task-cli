@@ -20,10 +20,14 @@ func TestUpdateCmd(t *testing.T) {
 	db, path := setup()
 	defer teardown(db, path)
 
+	mgr := new(connectionManager)
+	// set the db directly. Calling mgr.Connect() connects to production db
+	mgr.db = db
+
 	// buf will hold any outputs to stdout from the update command, outputs to stderr, and the command "Usage" text,
 	// this eliminates the noise when running "$ go test"
 	buf := new(bytes.Buffer)
-	uCmd := newUpdateCmd(db, buf)
+	uCmd := newUpdateCmd(mgr, buf)
 	uCmd.SetOut(buf)
 	uCmd.SetErr(buf)
 

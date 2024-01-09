@@ -7,11 +7,12 @@ import (
 )
 
 func main() {
-	db := Connect()
-	defer db.Close()
+	// Create a new connection manager to manage the db instance
+	mgr := newBoltManager()
+	defer mgr.Close()
 
 	// initialize buckets
-	db.Update(func(tx *bolt.Tx) error {
+	mgr.db.Update(func(tx *bolt.Tx) error {
 		tx.CreateBucketIfNotExists(TASKS_BUCKET)
 		tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
 		return nil
@@ -19,17 +20,17 @@ func main() {
 
 	// create sub commands
 	osOut := os.Stdout
-	addCmd := newAddCmd(db, osOut)
-	doCmd := newDoCmd(db, osOut)
-	updateCmd := newUpdateCmd(db, osOut)
-	listCmd := newListCmd(db, osOut)
-	finishCmd := newFinishCmd(db, osOut)
-	clearCmd := newClearCmd(db, osOut)
-	archiveCmd := newArchiveCmd(db, osOut)
-	deleteCmd := newDeleteCmd(db, osOut)
-	statsCmd := newStatsCmd(db, osOut)
-	countCmd := newCountCmd(db, osOut)
-	tagsCmd := newTagsCmd(db, osOut)
+	addCmd := newAddCmd(mgr, osOut)
+	doCmd := newDoCmd(mgr, osOut)
+	updateCmd := newUpdateCmd(mgr, osOut)
+	listCmd := newListCmd(mgr, osOut)
+	finishCmd := newFinishCmd(mgr, osOut)
+	clearCmd := newClearCmd(mgr, osOut)
+	archiveCmd := newArchiveCmd(mgr, osOut)
+	deleteCmd := newDeleteCmd(mgr, osOut)
+	statsCmd := newStatsCmd(mgr, osOut)
+	countCmd := newCountCmd(mgr, osOut)
+	tagsCmd := newTagsCmd(mgr, osOut)
 
 	// add sub commands
 	rootCmd.AddCommand(
