@@ -101,13 +101,13 @@ func newUpdateCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 			// Make sure the argument is an int
 			id, err := strconv.Atoi(args[0])
 			if err != nil {
-				return errors.New(fmt.Sprintf("Argument should be an integer\n\"%s\" is not an integer", args[0]))
+				return fmt.Errorf("Argument should be an integer\n\"%s\" is not an integer", args[0])
 			}
 
 			// Make sure the input number is a valid taskID
 			taskCount := getCount(db, TASKS_BUCKET)
 			if id > taskCount || id == 0 {
-				return errors.New(fmt.Sprintf("Invalid task ID, %d tasks exist", taskCount))
+				return (fmt.Errorf("Invalid task ID, %d tasks exist", taskCount))
 			}
 
 			// Return early if there's no update to make
@@ -528,7 +528,7 @@ func (c *connectionManager) Connect() *bolt.DB {
 func (c *connectionManager) Ping() error {
 	db := c.db.String()
 	if db == `DB<"">` {
-		return errors.New(fmt.Sprintf("Could not establish connection. Pinged db: %s", db))
+		return fmt.Errorf("Could not establish connection. Pinged db: %s", db)
 	}
 	return nil
 }
@@ -570,7 +570,6 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-	return
 }
 
 // Parse any tags in the form "+tag". Returns a slice of tags found and the original string with the
@@ -765,7 +764,7 @@ func deleteKey(k int, db *bolt.DB, bucket []byte) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
-			return errors.New(fmt.Sprintf("Could not find the `%s` bucket", string(bucket)))
+			return fmt.Errorf("Could not find the `%s` bucket", string(bucket))
 		}
 		err := b.Delete(itob(k))
 		if err != nil {

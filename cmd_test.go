@@ -422,14 +422,3 @@ func teardown(db *bolt.DB, path string) {
 	db.Close()
 	os.Remove(path)
 }
-
-// Creates and opens a db at the given path.
-// IMPORTANT: This fn Exits the program if it fails to connect to the db.
-func openConnection(path string) *bolt.DB {
-	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 1 * time.Second})
-	if err != nil {
-		fmt.Printf("Error connecting to database\npath:%s\nErr:%v\n", path, err)
-		os.Exit(1)
-	}
-	return db
-}
