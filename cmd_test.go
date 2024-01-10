@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,111 +11,101 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/spf13/cobra"
 )
 
-// The update cmd opens a connection with db ->
-// Must close any open db sessions before executing the command.
-// In cases where the db needs to be acessed to validate that the command worked,
-// a new connection to db has to be opened.
-func TestUpdateCmd(t *testing.T) {
+func TestUpdateCmdInput(t *testing.T) {
 	db, path := setup()
 	defer teardown(db, path)
 
-	mgr := new(connectionManager)
-	// set the db directly. Calling mgr.Connect() connects to production db
-	mgr.db = db
+	uCmd, _ := setupCmd(newUpdateCmd, db)
 
-	// buf will hold any outputs to stdout from the update command, outputs to stderr, and the command "Usage" text,
-	// this eliminates the noise when running "$ go test"
-	buf := new(bytes.Buffer)
-	uCmd := newUpdateCmd(mgr, buf)
-	uCmd.SetOut(buf)
-	uCmd.SetErr(buf)
-
-	uCmd.SetArgs([]string{})
-	err := uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when no arguments are passed")
+	var inputValidation = []struct {
+		name   string
+		input  []string
+		errMsg string
+	}{
+		{"Empty input", []string{}, "Should error when no arguments are passed"},
+		{"Multiple inputs", []string{"1", "2"}, "Should error when more than 1 argument is passed"},
+		{"Non-ASCII int", []string{"a"}, "Should error when argument is not an ASCII int"},
+		{"ID Out of range", []string{"10"}, "Should error when ID is out of range"},
+		{"ID is 0", []string{"0"}, "Should error when ID is 0"},
 	}
 
-	uCmd.SetArgs([]string{"1", "2"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when more than 1 argument is passed")
+	for _, tc := range inputValidation {
+		t.Run(tc.name, func(t *testing.T) {
+			uCmd.SetArgs(tc.input)
+			err := uCmd.Execute()
+			if err == nil {
+				t.Fatalf(tc.errMsg)
+			}
+		})
+	}
+}
+
+func TestUpdateCmdFlags(t *testing.T) {
+	db, path := setup()
+	defer teardown(db, path)
+
+	uCmd, _ := setupCmd(newUpdateCmd, db)
+
+	var input = []struct {
+		name           string
+		input          []string
+		expectedDesc   string
+		expectedStatus string
+		expectedTag    string
+		expectError    bool
+	}{
+		{"-s incomplete -> complete", []string{"1", "-s"}, "initial", STATUS.COMPLETE, "", false},
+		{"-s complete -> incomplete", []string{"1", "-s"}, "initial", STATUS.INCOMPLETE, "", false},
+		{"-d no tag", []string{"1", "-d=updated"}, "updated", STATUS.INCOMPLETE, "", false},
+		{"-d with tag", []string{"1", "-d=tagged +test"}, "tagged", STATUS.INCOMPLETE, "test", false},
+		{"-d and -s with tag", []string{"1", "-d=triple +tres", "-s"}, "triple", STATUS.COMPLETE, "tres", false},
+		{"No flag used", []string{"1"}, "", "", "", true},
+		{"Empty -d flag", []string{"1", "-d=+fail"}, "", "", "", true},
 	}
 
-	uCmd.SetArgs([]string{"a"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when argument is not an ASCII int")
-	}
-
-	uCmd.SetArgs([]string{"10"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when ID is out of range")
-	}
-
-	uCmd.SetArgs([]string{"0"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when ID is 0")
-	}
-
-	strs := []string{"a"}
-	for _, s := range strs {
-		err := insert(db, TASKS_BUCKET, s, "")
-		if err != nil {
-			t.Fatalf("Failed to insert into db: %v", err)
+	for num, tc := range input {
+		// avoid lingering values while looping through cmd executions
+		resetGlobals()
+		// reset the task for each run
+		updateTask(db, 1, Task{"initial", STATUS.INCOMPLETE, "2006-01-02T15:04:05Z07:00", "", ""})
+		// to test -s in reverse, set the intial status to completed
+		if num == 1 {
+			updateTask(db, 1, Task{"initial", STATUS.COMPLETE, "2006-01-02T15:04:05Z07:00", "", ""})
 		}
-	}
 
-	uCmd.SetArgs([]string{"1"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error when no update flags are used")
-	}
+		t.Run(tc.name, func(t *testing.T) {
+			uCmd.SetArgs(tc.input)
+			err := uCmd.Execute()
+			if tc.expectError && err == nil {
+				t.Fatalf("Should have errored, error: %v", err)
+			}
+			if tc.expectError && err != nil {
+				return
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
 
-	// Make sure the -d updates a tasks description and -s can flip from incomplete -> complete
-	updatedDesc := "updated"
-	dFlag := fmt.Sprintf("-d=%s", updatedDesc)
+			task, err := getTask(db, 1)
+			if err != nil {
+				t.Fatalf("Failed to retrieve task: %v", err)
+			}
 
-	uCmd.SetArgs([]string{"1", dFlag, "-s"})
-	err = uCmd.Execute()
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	task, err := getTask(db, 1)
-	if err != nil {
-		t.Fatalf("Error retrieving task: %v ", err)
-	}
-
-	if task.Desc != updatedDesc || task.Status != STATUS.COMPLETE {
-		t.Fatalf("Task did not update correctly. Expected: \"1. %s %s\". Got: \"1. %s %s\"", updatedDesc, STATUS.COMPLETE, task.Desc, task.Status)
-	}
-
-	// Make sure using tags with -d works && -s can flip from complete -> incomplete
-	uCmd.SetArgs([]string{"1", "-d=+test hmm", "-s"})
-	err = uCmd.Execute()
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	t2, err := getTask(db, 1)
-	if err != nil {
-		t.Fatalf("Error retrieving task: %v", err)
-	}
-
-	if t2.Desc != "hmm" || t2.Status != STATUS.INCOMPLETE || t2.Tag != "test" {
-		t.Fatalf("Task did not update correctly\nGot:%v", t2)
-	}
-
-	// Make sure passing a tag with no text to -d causes an error
-	uCmd.SetArgs([]string{"1", "-d=+fail", "-s"})
-	err = uCmd.Execute()
-	if err == nil {
-		t.Fatalf("Should error if -d is only passed a flag")
+			if task.Desc != tc.expectedDesc || task.Status != tc.expectedStatus || task.Tag != tc.expectedTag {
+				expected := fmt.Sprintf(
+					"Description:%s, Status:%s, Tag:%s",
+					tc.expectedDesc, tc.expectedStatus, tc.expectedTag,
+				)
+				actual := fmt.Sprintf(
+					"Description:%s, Status:%s, Tag:%s",
+					task.Desc, task.Status, task.Tag,
+				)
+				t.Fatalf("\nExpected: %s\nActual: %s", expected, actual)
+			}
+		})
 	}
 }
 
@@ -421,4 +412,22 @@ func setup() (*bolt.DB, string) {
 func teardown(db *bolt.DB, path string) {
 	db.Close()
 	os.Remove(path)
+}
+
+// Reset global values such as flags to their default values.
+// Helps avoid bugs when running tests in a loop
+func resetGlobals() {
+	UpdateStatus = false
+	UpdatedDesc = ""
+}
+
+// Create a command and set any outputs to stdout and stderr
+// to instead go to a buffer. Returns the command and the buffer.
+// Using a buffer instead of the standard streams eliminates noise when running `$ go test“
+func setupCmd(cmdToCreate func(*connectionManager, io.Writer) *cobra.Command, db *bolt.DB) (*cobra.Command, *bytes.Buffer) {
+	buf := new(bytes.Buffer)
+	cmd := cmdToCreate(&connectionManager{db}, buf)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	return cmd, buf
 }
