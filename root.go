@@ -499,7 +499,7 @@ type BoltManager interface {
 	Close() error
 }
 
-// Implements BoltManager
+// Implements BoltManager. Note that db is initially nil
 type connectionManager struct {
 	db *bolt.DB
 }
@@ -673,7 +673,8 @@ func getTask(db *bolt.DB, key int) (Task, error) {
 }
 
 // Update a task in the db. Returns an error if the tasks bucket does not exist,
-// if failed to marshal the task, or if failed to update the task in the db.
+// if failed to marshal the task, or if failed to update the task in the db. If taskId does not exist
+// in the db, a new task will be created
 func updateTask(db *bolt.DB, taskId int, updated Task) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(TASKS_BUCKET)
