@@ -494,7 +494,7 @@ var STATUS = TaskStatus{"complete", "incomplete"}
 var RFC3339 = "2006-01-02T15:04:05Z07:00"
 
 type BoltManager interface {
-	Connect() *bolt.DB
+	Database() *bolt.DB
 	Ping() error
 	Close() error
 }
@@ -504,24 +504,9 @@ type connectionManager struct {
 	db *bolt.DB
 }
 
-// Returns a db instance
-func (c *connectionManager) Connect() *bolt.DB {
-	hDir, e := os.UserHomeDir()
-	check(e)
-
-	// default is "/task"
-	path := hDir + "/task"
-
-	// creates the `task` dir if it doesn't exist
-	dErr := os.MkdirAll(path, 0777)
-	check(dErr)
-
-	// default is "/tasks.db"
-	db, err := bolt.Open(path+"/tasks.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
-	check(err)
-
-	c.db = db
-	return db
+// Returns the currently connected db instance
+func (c *connectionManager) Database() *bolt.DB {
+	return c.db
 }
 
 // Validates the connection to db
@@ -538,14 +523,34 @@ func (c *connectionManager) Close() error {
 	return c.db.Close()
 }
 
-func newBoltManager() *connectionManager {
-	mgr := new(connectionManager)
-	mgr.db = mgr.Connect()
+func newBoltManager() (*connectionManager, error) {
+	var connErr error
+
+	mgr := &connectionManager{}
+	mgr.db = newBoltConnection()
 	if err := mgr.Ping(); err != nil {
-		fmt.Println("Couldn't connect to the database")
-		os.Exit(1)
+		connErr = err
 	}
-	return mgr
+	return mgr, connErr
+}
+
+// Returns a db instance
+func newBoltConnection() *bolt.DB {
+	hDir, e := os.UserHomeDir()
+	check(e)
+
+	// default is "/task"
+	path := hDir + "/task"
+
+	// creates the `task` dir if it doesn't exist
+	dErr := os.MkdirAll(path, 0777)
+	check(dErr)
+
+	// default is "/tasks.db"
+	db, err := bolt.Open(path+"/tasks.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
+	check(err)
+
+	return db
 }
 
 type TaskStatus struct {

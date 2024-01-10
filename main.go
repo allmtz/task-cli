@@ -8,11 +8,12 @@ import (
 
 func main() {
 	// Create a new connection manager to manage the db instance
-	mgr := newBoltManager()
+	mgr, err := newBoltManager()
+	check(err)
 	defer mgr.Close()
 
 	// initialize buckets
-	mgr.db.Update(func(tx *bolt.Tx) error {
+	mgr.Database().Update(func(tx *bolt.Tx) error {
 		tx.CreateBucketIfNotExists(TASKS_BUCKET)
 		tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
 		return nil
