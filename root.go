@@ -53,28 +53,44 @@ func newAddCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 
 func newDoCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 	doCmd := &cobra.Command{
-		Use:   "do [taskID]",
-		Short: "Mark a task on your TODO list as complete",
-		Run: func(cmd *cobra.Command, args []string) {
+		Use:          "do [taskID]",
+		Short:        "Mark a task on your TODO list as complete",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			db := mgr.db
 			var keys []int
+
+			if len(args) == 0 {
+				return fmt.Errorf("Must provide a task ID")
+			}
 			for _, v := range args {
 				id, err := strconv.Atoi(v)
 				if err != nil {
-					fmt.Fprintln(out, "Arguments should only be numbers")
-					fmt.Fprintf(out, "%s is not a number\n", v)
-					os.Exit(1)
+					return fmt.Errorf(`Invalid task ID "%s"`, v)
 				}
 				keys = append(keys, id)
-				completeTask(id, db)
+				er := completeTask(id, db)
+				if er != nil {
+					return er
+				}
 				fmt.Fprintf(out, "Completed task %d\n", id)
 			}
 			if DeleteOnDo {
+				// add the specified tasks to the archive ->
+				// remove _only_ the specified tasks from the
+				// tasks bucket
+				var tasks []Task
+				for _, k := range keys {
+					task, _ := getTask(db, k)
+					tasks = append(tasks, task)
+				}
+				addToArchive(db, tasks)
 				deleteKeys(keys, db, TASKS_BUCKET)
 			}
 			fmt.Fprintln(out)
 			tp := getTasks(db, TASKS_BUCKET)
 			fmt.Fprintln(out, formatTasks(tp))
+			return nil
 		},
 	}
 	doCmd.Flags().BoolVarP(&DeleteOnDo, "finish", "f", false, "Complete and finish the specified tasks")
@@ -812,20 +828,18 @@ func deleteKeys(toDelete []int, db *bolt.DB, bucket []byte) {
 }
 
 // Update the specified tasks status to `completed`
-func completeTask(taskID int, db *bolt.DB) {
-	db.Update(func(tx *bolt.Tx) error {
+func completeTask(taskID int, db *bolt.DB) error {
+	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(TASKS_BUCKET)
 		if b == nil {
-			fmt.Println("Could not find a tasks database")
-			os.Exit(1)
+			return fmt.Errorf("Could not find a tasks database")
 		}
 
 		byteId := itob(taskID)
 
 		val := b.Get(byteId)
 		if val == nil {
-			fmt.Printf("Task %d does not exist\n", taskID)
-			os.Exit(1)
+			return fmt.Errorf("Task %d does not exist\n", taskID)
 		}
 
 		var t Task
@@ -839,14 +853,15 @@ func completeTask(taskID int, db *bolt.DB) {
 		t.Status = STATUS.COMPLETE
 		t.Completed = time.Now().Format(RFC3339)
 		updatedTask, err := json.Marshal(t)
-		check(err)
+		if err != nil {
+			return err
+		}
 
 		// update the `tasks` bucket with the completed task
 		b.Put(byteId, updatedTask)
 
 		return nil
 	})
-
 }
 
 // Filter out completed tasks from the `tasks` bucket
@@ -900,6 +915,19 @@ func renumberEntires(bucket *bolt.Bucket) error {
 	// update the Sequence to match the number of remaining entries
 	er := bucket.SetSequence(uint64(idx))
 	return er
+}
+
+// Adds each task in the slice to the archive bucket
+func addToArchive(db *bolt.DB, tasks []Task) {
+	db.Update(func(tx *bolt.Tx) error {
+		b, _ := tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
+		for _, t := range tasks {
+			k, _ := b.NextSequence()
+			buf, _ := json.Marshal(t)
+			b.Put(itob(int(k)), buf)
+		}
+		return nil
+	})
 }
 
 // Convert an int to a byte slice

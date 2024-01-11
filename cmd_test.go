@@ -25,11 +25,11 @@ func TestUpdateCmdInput(t *testing.T) {
 		input  []string
 		errMsg string
 	}{
-		{"Empty input", []string{}, "Should error when no arguments are passed"},
-		{"Multiple inputs", []string{"1", "2"}, "Should error when more than 1 argument is passed"},
-		{"Non-ASCII int", []string{"a"}, "Should error when argument is not an ASCII int"},
-		{"ID Out of range", []string{"10"}, "Should error when ID is out of range"},
-		{"ID is 0", []string{"0"}, "Should error when ID is 0"},
+		{"Empty input", []string{}, "Failed to error when no arguments are passed"},
+		{"Multiple inputs", []string{"1", "2"}, "Failed to error when more than 1 argument is passed"},
+		{"Non-ASCII int", []string{"a"}, "Failed to error when argument is not an ASCII int"},
+		{"ID Out of range", []string{"10"}, "Failed to error when ID is out of range"},
+		{"ID is 0", []string{"0"}, "Failed to error when ID is 0"},
 	}
 
 	for _, tc := range inputValidation {
@@ -271,6 +271,89 @@ func TestCompleteTask(t *testing.T) {
 	}
 }
 
+func TestDoCmdInput(t *testing.T) {
+	db, path := setup()
+	defer teardown(db, path)
+
+	doCmd, _ := setupCmd(newDoCmd, db)
+
+	var input = []struct {
+		name   string
+		input  []string
+		errMsg string
+	}{
+		{"Empty input", []string{}, "Failed to error when no arguments are passed"},
+		{"Non-string int", []string{"a"}, "Failed to error when more than 1 argument is passed"},
+		{"ID Out of range", []string{"10"}, "Failed to error when ID is out of range"},
+		{"ID is 0", []string{"0"}, "Failed to error when ID is 0"},
+	}
+
+	for _, tc := range input {
+		t.Run(tc.name, func(t *testing.T) {
+			doCmd.SetArgs(tc.input)
+			err := doCmd.Execute()
+			if err == nil {
+				t.Fatalf(tc.errMsg)
+			}
+		})
+	}
+}
+
+func TestDoCmdFLags(t *testing.T) {
+	db, path := setup()
+	defer teardown(db, path)
+
+	doCmd, _ := setupCmd(newDoCmd, db)
+
+	strs := []string{"a", "b", "c"}
+
+	var input = []struct {
+		name            string
+		input           []string
+		expectedCount   int
+		expectedArchive []string
+	}{
+		// Keys are 1 indexed -> task 1 corresponds to  strs[0]
+		{"-f works", []string{"1", "-f"}, len(strs) - 1, []string{strs[0]}},
+		{"-f with multiple IDs", []string{"1", "2", "-f"}, len(strs) - 2, []string{strs[0], strs[1]}},
+	}
+
+	for _, tc := range input {
+		// reset tasks, globals and archive bucket for each run
+		resetGlobals()
+		resetArchive(db)
+		resetTasks(db)
+		// insert the default tasks
+		for _, s := range strs {
+			insert(db, TASKS_BUCKET, s, "")
+		}
+
+		doCmd.SetArgs(tc.input)
+		err := doCmd.Execute()
+		if err != nil {
+			t.Fatalf("Unexpected error %v", err)
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			// make sure the task/s was deleted
+			c := getCount(db, TASKS_BUCKET)
+			if c != tc.expectedCount {
+				t.Fatalf("Error, %d tasks in tasks bucket, expected %d", c, tc.expectedCount)
+			}
+			// check that the correct task was added to the archive
+			archive := getTasks(db, ARCHIVE_BUCKET)
+			if len(archive) != len(tc.expectedArchive) {
+				t.Fatalf("Error Archive len: %d, expected %d", len(archive), len(tc.expectedArchive))
+			}
+			for i, v := range tc.expectedArchive {
+				if v != archive[i].task.Desc {
+					t.Fatalf(`Error, wrong task in archive. Expected "%s" got "%s"`, v, archive[i].task.Desc)
+				}
+			}
+		})
+	}
+}
+
 func TestFinish(t *testing.T) {
 	db, path := setup()
 	defer teardown(db, path)
@@ -419,6 +502,23 @@ func teardown(db *bolt.DB, path string) {
 func resetGlobals() {
 	UpdateStatus = false
 	UpdatedDesc = ""
+	DeleteOnDo = false
+}
+
+func resetArchive(db *bolt.DB) {
+	db.Update(func(tx *bolt.Tx) error {
+		tx.DeleteBucket(ARCHIVE_BUCKET)
+		tx.CreateBucket(ARCHIVE_BUCKET)
+		return nil
+	})
+}
+
+func resetTasks(db *bolt.DB) {
+	db.Update(func(tx *bolt.Tx) error {
+		tx.DeleteBucket(TASKS_BUCKET)
+		tx.CreateBucket(TASKS_BUCKET)
+		return nil
+	})
 }
 
 // Create a command and set any outputs to stdout and stderr
