@@ -1,4 +1,4 @@
-module allmtz/task-cli
+module github.com/allmtz/task-cli
 
 go 1.21.4
 
