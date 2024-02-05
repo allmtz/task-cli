@@ -221,7 +221,7 @@ func newFinishCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 
 			fmt.Fprintf(out, "Deleted all completed tasks\n")
 			tp := getTasks(db, TASKS_BUCKET)
-			fmt.Fprintln(out, formatTasks(tp))
+			fmt.Fprint(out, formatTasks(tp))
 		},
 	}
 }
