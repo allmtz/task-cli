@@ -232,6 +232,9 @@ func newFinishCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 
 			// Print the updated task list
 			tp := getTasks(db, TASKS_BUCKET)
+			if len(tp) == 0 {
+				return
+			}
 			fmt.Fprintln(out, formatTasks(tp))
 		},
 	}
