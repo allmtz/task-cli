@@ -221,7 +221,7 @@ func newFinishCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 
 			fmt.Fprintf(out, "Deleted all completed tasks\n")
 			tp := getTasks(db, TASKS_BUCKET)
-			fmt.Fprintln(out, formatTasks(tp))
+			fmt.Fprint(out, formatTasks(tp))
 		},
 	}
 }
@@ -749,19 +749,28 @@ func filterTasks(tp []TaskPosition, include, exclude []string) []TaskPosition {
 
 // Format the tasks in db, return the formatted string
 func formatTasks(tp []TaskPosition) string {
-	var formatted []string
-	for _, t := range tp {
+	var builder strings.Builder
+
+	for idx, t := range tp {
 		s := "🔴"
 		if t.task.Status == STATUS.COMPLETE {
 			s = "✅"
 		}
+
+		// Build the task strings.
+		// format: num. [tag: ] desc status [\n]
+		builder.WriteString(fmt.Sprintf("%d: ", t.dbKey))
 		if ShowTags {
-			formatted = append(formatted, fmt.Sprintf("%d: %s: %s %s", t.dbKey, t.task.Tag, t.task.Desc, s))
-			continue
+			builder.WriteString(fmt.Sprintf("%s: ", t.task.Tag))
 		}
-		formatted = append(formatted, fmt.Sprintf("%d: %s %s", t.dbKey, t.task.Desc, s))
+		builder.WriteString(fmt.Sprintf("%s %s", t.task.Desc, s))
+		//   Add a newline if it's not the last task
+		if idx < len(tp)-1 {
+			builder.WriteString("\n")
+		}
 	}
-	return strings.Join(formatted, "\n")
+
+	return builder.String()
 }
 
 // Opens a View transaction with `db` and returns the number of entries in `bucket`
