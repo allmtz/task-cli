@@ -202,6 +202,10 @@ func newListCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 
 			tasks := getTasks(mgr.db, TASKS_BUCKET)
 			tasks = filterTasks(tasks, include, exclude)
+			if len(tasks) == 0 {
+				fmt.Fprintln(out, "No tasks")
+				return
+			}
 			fmt.Fprintln(out, formatTasks(tasks))
 		},
 	}
@@ -216,12 +220,19 @@ func newFinishCmd(mgr *connectionManager, out io.Writer) *cobra.Command {
 		Short: "Delete all completed tasks",
 		Run: func(cmd *cobra.Command, args []string) {
 			db := mgr.db
-			err := finish(db)
+			deletedTasks, err := finish(db)
 			check(err)
 
+			if len(deletedTasks) == 0 {
+				fmt.Fprintln(out, "No completed tasks to finish")
+				return
+			}
+
 			fmt.Fprintf(out, "Deleted all completed tasks\n")
+
+			// Print the updated task list
 			tp := getTasks(db, TASKS_BUCKET)
-			fmt.Fprint(out, formatTasks(tp))
+			fmt.Fprintln(out, formatTasks(tp))
 		},
 	}
 }
@@ -874,13 +885,15 @@ func completeTask(taskID int, db *bolt.DB) error {
 }
 
 // Filter out completed tasks from the `tasks` bucket
-func finish(db *bolt.DB) error {
-	return db.Update(func(tx *bolt.Tx) error {
+func finish(db *bolt.DB) ([]Task, error) {
+	var deletedTasks []Task
+	updateErr := db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(TASKS_BUCKET)
-		archive, _ := tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
 		if b == nil {
 			return errors.New("No tasks exist")
 		}
+
+		archive, _ := tx.CreateBucketIfNotExists(ARCHIVE_BUCKET)
 
 		var filtered [][]byte
 		err := b.ForEach(func(k, v []byte) error {
@@ -892,12 +905,15 @@ func finish(db *bolt.DB) error {
 			}
 			// add the completed tasks to the archive bucket
 			idx, _ := archive.NextSequence()
+			deletedTasks = append(deletedTasks, t)
 			return archive.Put(itob(int(idx)), v)
 		})
 		if err != nil {
 			return err
 		}
 
+		// Delete the old tasks bucket, create a new bucket and
+		// insert the filtered tasks
 		tx.DeleteBucket(TASKS_BUCKET)
 		newBucket, _ := tx.CreateBucket(TASKS_BUCKET)
 		for _, v := range filtered {
@@ -906,6 +922,7 @@ func finish(db *bolt.DB) error {
 		}
 		return nil
 	})
+	return deletedTasks, updateErr
 }
 
 // Renumber bucket entries in ascending order.
