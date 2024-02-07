@@ -52,7 +52,7 @@ Both methods require Go to be installed.
 
 Using Go
 ```bash
-go install github.com/allmtz/task-cli
+go install github.com/allmtz/task-cli@latest
 ```
 
 Using Github 
