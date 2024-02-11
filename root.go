@@ -722,7 +722,7 @@ func updateTask(db *bolt.DB, taskId int, updated Task) error {
 }
 
 // Filter tasks by tag. Returns a slice of tasks whose tag is present in `include`.
-// One on the []string must be empty i.e. can only include or exclude, can't do both.
+// One of the []string must be empty i.e. can only include or exclude, can't do both.
 func filterTasks(tp []TaskPosition, include, exclude []string) []TaskPosition {
 	// no tags to filter by, return tp
 	if len(include) == 0 && len(exclude) == 0 {
